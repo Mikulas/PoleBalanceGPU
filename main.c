@@ -170,12 +170,11 @@ int computeFitness(int * c_position, int * c_velocity, int * p_angle, int * p_ve
 int main (int argc, const char * argv[]) {
     
 	// Problem size
-	int generation_size = 500;
-	int generation_count = 20;
+	const int generation_size = 500;
+	const int generation_count = 20;
+	const float mutation = 0.05;
 	
 	srand(time(NULL));
-	
-	int n;
 	
 	// Allocate some memory and a place for the results
 	int * c_position = (int *) malloc(generation_size * sizeof(int));
@@ -200,6 +199,7 @@ int main (int argc, const char * argv[]) {
 		//fitness[i] = 0.f;
 	}
 
+	int n;
 	for (n = 0; n < generation_count; n++) {
 		c_position = next_c_position;
 		c_velocity = next_c_velocity;
@@ -250,14 +250,18 @@ int main (int argc, const char * argv[]) {
 			}
 			key_parent_2 = i;
 
-			next_c_position[k] = c_position[key_parent_1];
-			next_c_velocity[k] = c_velocity[key_parent_1];
-			next_p_angle[k] = p_angle[key_parent_2];
-			next_p_velocity[k] = p_velocity[key_parent_2];
+			/**
+			 * prepare next generation as combination of two parens
+			 * with 5% mutation
+			 */
+			next_c_position[k] = c_position[key_parent_1] + mutation * (rand() % 2 == 1 ? 1 : -1) * (rand() % (c_position[key_parent_1] == 0 ? 1 : c_position[key_parent_1]));
+			next_c_velocity[k] = c_velocity[key_parent_1] + mutation * (rand() % 2 == 1 ? 1 : -1) * (rand() % (c_velocity[key_parent_1] == 0 ? 1 : c_velocity[key_parent_1]));
+			next_p_angle[k] = p_angle[key_parent_2] + mutation * (rand() % 2 == 1 ? 1 : -1) * (rand() % (p_angle[key_parent_2] == 0 ? 1 : p_angle[key_parent_2]));
+			next_p_velocity[k] = p_velocity[key_parent_2] + mutation * (rand() % 2 == 1 ? 1 : -1) * (rand() % (p_velocity[key_parent_2] == 0 ? 1 : p_velocity[key_parent_2]));
 		}
 	}
 
-	printf("Solution:\n\tfitness: %f\n\tc1: %i\n\tc2: %i\n\tc3: %i\n\tc4: %i\n", fitness[best_key], c_position[best_key], c_velocity[best_key], p_angle[best_key], p_velocity[best_key]);
+	printf("Solution:\n\tfitness = %f\n\tc1 = %i\n\tc2 = %i\n\tc3 = %i\n\tc4 = %i\n", fitness[best_key] > 20 ? 20 : fitness[best_key], c_position[best_key], c_velocity[best_key], p_angle[best_key], p_velocity[best_key]);
 
 	return 0;
 }
