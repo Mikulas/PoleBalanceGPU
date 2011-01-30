@@ -1,5 +1,5 @@
 /**
- * must click on "Episode 3" under the "Executables" list item, then get info (or apple-I) then set the working directory to Project Directory (not build directory)
+ * must click on the file under "Executables" list item, then get info (or apple-I) then set the working directory to Project Directory (not build directory)
  */
 
 
@@ -12,6 +12,7 @@
 #include <time.h>
 
 #include <OpenCL/OpenCL.h>
+
 
 #pragma mark -
 #pragma mark Utilities
@@ -232,7 +233,7 @@ int main (int argc, const char * argv[]) {
 			int key_parent_1 = 0;
 			int key_parent_2 = 0;
 
-			// get weighted entity (roulette wheel implementation)
+			// Get weighted entity (roulette wheel implementation)
 			float roll = (float)(rand() % (int) ceil(100 * fitness_sum)) / 100;
 			int i;
 			for (i = 0; i < generation_size; i++) {
@@ -250,10 +251,7 @@ int main (int argc, const char * argv[]) {
 			}
 			key_parent_2 = i;
 
-			/**
-			 * prepare next generation as combination of two parens
-			 * with 5% mutation
-			 */
+			// prepare next generation as combination of two parens, with mutation
 			next_c_position[k] = c_position[key_parent_1] + mutation * (rand() % 2 == 1 ? 1 : -1) * (rand() % (c_position[key_parent_1] == 0 ? 1 : c_position[key_parent_1]));
 			next_c_velocity[k] = c_velocity[key_parent_1] + mutation * (rand() % 2 == 1 ? 1 : -1) * (rand() % (c_velocity[key_parent_1] == 0 ? 1 : c_velocity[key_parent_1]));
 			next_p_angle[k] = p_angle[key_parent_2] + mutation * (rand() % 2 == 1 ? 1 : -1) * (rand() % (p_angle[key_parent_2] == 0 ? 1 : p_angle[key_parent_2]));
