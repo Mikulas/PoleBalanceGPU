@@ -18,20 +18,20 @@
 #pragma mark Utilities
 char * load_program_source(const char *filename)
 { 
-	
+
 	struct stat statbuf;
 	FILE *fh; 
 	char *source; 
-	
+
 	fh = fopen(filename, "r");
 	if (fh == 0)
 		return 0; 
-	
+
 	stat(filename, &statbuf);
 	source = (char *) malloc(statbuf.st_size + 1);
 	fread(source, statbuf.st_size, 1, fh);
 	source[statbuf.st_size] = '\0'; 
-	
+
 	return source; 
 } 
 
@@ -41,30 +41,30 @@ int computeFitness(int * c_position, int * c_velocity, int * p_angle, int * p_ve
 {
 	cl_program program[1];
 	cl_kernel kernel[2];
-	
+
 	cl_command_queue cmd_queue;
 	cl_context   context;
-	
+
 	cl_device_id cpu = NULL, device = NULL;
 
 	cl_int err = 0;
 	size_t returned_size = 0;
 	size_t buffer_size;
-	
+
 	cl_mem mem_c_position, mem_c_velocity, mem_p_angle, mem_p_velocity, mem_fitness;
-	
+
 #pragma mark Device Information
 	{
 		// Find the CPU CL device, as a fallback
 		err = clGetDeviceIDs(NULL, CL_DEVICE_TYPE_CPU, 1, &cpu, NULL);
 		assert(err == CL_SUCCESS);
-		
+
 		// Find the GPU CL device, this is what we really want
 		// If there is no GPU device is CL capable, fall back to CPU
 		err = clGetDeviceIDs(NULL, CL_DEVICE_TYPE_GPU, 1, &device, NULL);
 		if (err != CL_SUCCESS) device = cpu;
 		assert(device);
-	
+
 		// Get some information about the returned device
 		cl_char vendor_name[1024] = {0};
 		cl_char device_name[1024] = {0};
@@ -73,18 +73,18 @@ int computeFitness(int * c_position, int * c_velocity, int * p_angle, int * p_ve
 		assert(err == CL_SUCCESS);
 		printf("Connecting to %s %s...\n", vendor_name, device_name);
 	}
-	
+
 #pragma mark Context and Command Queue
 	{
 		// Now create a context to perform our calculation with the 
 		// specified device 
 		context = clCreateContext(0, 1, &device, NULL, NULL, &err);
 		assert(err == CL_SUCCESS);
-		
+
 		// And also a command queue for the context
 		cmd_queue = clCreateCommandQueue(context, device, 0, NULL);
 	}
-	
+
 #pragma mark Program and Kernel Creation
 	{
 		// Load the program source from disk
@@ -94,19 +94,19 @@ int computeFitness(int * c_position, int * c_velocity, int * p_angle, int * p_ve
 		char *program_source = load_program_source(filename);
 		program[0] = clCreateProgramWithSource(context, 1, (const char**)&program_source, NULL, &err);
 		assert(err == CL_SUCCESS);
-		
+
 		err = clBuildProgram(program[0], 0, NULL, NULL, NULL, NULL);
 		assert(err == CL_SUCCESS);
-		
+
 		// Now create the kernel "objects" that we want to use in the example file 
 		kernel[0] = clCreateKernel(program[0], "add", &err);
 	}
-		
+
 #pragma mark Memory Allocation
 	{
 		// Allocate memory on the device to hold our data and store the results into
 		buffer_size = sizeof(int) * n;
-		
+
 		mem_c_position = clCreateBuffer(context, CL_MEM_READ_ONLY, buffer_size, NULL, NULL);
 		err = clEnqueueWriteBuffer(cmd_queue, mem_c_position, CL_TRUE, 0, buffer_size, (void*)c_position, 0, NULL, NULL);
 		mem_c_velocity = clCreateBuffer(context, CL_MEM_READ_ONLY, buffer_size, NULL, NULL);
@@ -116,15 +116,15 @@ int computeFitness(int * c_position, int * c_velocity, int * p_angle, int * p_ve
 		mem_p_velocity = clCreateBuffer(context, CL_MEM_READ_ONLY, buffer_size, NULL, NULL);
 		err |= clEnqueueWriteBuffer(cmd_queue, mem_p_velocity, CL_TRUE, 0, buffer_size, (void*)p_velocity, 0, NULL, NULL);
 		assert(err == CL_SUCCESS);
-		
+
 		// Results array
 		buffer_size = sizeof(float) * n;
 		mem_fitness	= clCreateBuffer(context, CL_MEM_READ_WRITE, buffer_size, NULL, NULL);
-		
+
 		// Get all of the stuff written and allocated
 		clFinish(cmd_queue);
 	}
-	
+
 #pragma mark Kernel Arguments
 	{
 		// Now setup the arguments to our kernel
@@ -135,7 +135,7 @@ int computeFitness(int * c_position, int * c_velocity, int * p_angle, int * p_ve
 		err |= clSetKernelArg(kernel[0],  4, sizeof(cl_mem), &mem_fitness);
 		assert(err == CL_SUCCESS);
 	}
-	
+
 #pragma mark Execution and Read
 	{
 		// Run the calculation by enqueuing it and forcing the 
@@ -144,14 +144,14 @@ int computeFitness(int * c_position, int * c_velocity, int * p_angle, int * p_ve
 		err = clEnqueueNDRangeKernel(cmd_queue, kernel[0], 1, NULL, &global_work_size, NULL, 0, NULL, NULL);
 		assert(err == CL_SUCCESS);
 		clFinish(cmd_queue);
-		
+
 		// Once finished read back the results from the answer 
 		// array into the results array
 		err = clEnqueueReadBuffer(cmd_queue, mem_fitness, CL_TRUE, 0, buffer_size, fitness, 0, NULL, NULL);
 		assert(err == CL_SUCCESS);
 		clFinish(cmd_queue);
 	}
-	
+
 #pragma mark Teardown
 	{
 		clReleaseMemObject(mem_c_position);
@@ -159,7 +159,7 @@ int computeFitness(int * c_position, int * c_velocity, int * p_angle, int * p_ve
 		clReleaseMemObject(mem_p_angle);
 		clReleaseMemObject(mem_p_velocity);
 		clReleaseMemObject(mem_fitness);
-		
+
 		clReleaseCommandQueue(cmd_queue);
 		clReleaseContext(context);
 	}
@@ -242,7 +242,7 @@ int main (int argc, const char * argv[]) {
 				}
 			}
 			key_parent_1 = i;
-			
+
 			roll = (float)(rand() % (int) ceil(100 * fitness_sum)) / 100;
 			for (int i = 0; i < generation_size; i++) {
 				if (roll < border[i]) {
@@ -263,11 +263,3 @@ int main (int argc, const char * argv[]) {
 
 	return 0;
 }
-
-
-
-
-
-
-
-
