@@ -37,7 +37,7 @@ char * load_program_source(const char *filename)
 
 #pragma mark -
 #pragma mark Main OpenCL Routine
-int computeFitness(int * c_position, int * c_velocity, int * p_angle, int * p_velocity, float * fitness, int n)
+int computeFitness(int * c_position, int * c_velocity, int * p_angle, int * p_velocity, int * fitness, int n)
 {
 	cl_program program[1];
 	cl_kernel kernel[2];
@@ -117,8 +117,6 @@ int computeFitness(int * c_position, int * c_velocity, int * p_angle, int * p_ve
 		err |= clEnqueueWriteBuffer(cmd_queue, mem_p_velocity, CL_TRUE, 0, buffer_size, (void*)p_velocity, 0, NULL, NULL);
 		assert(err == CL_SUCCESS);
 
-		// Results array
-		buffer_size = sizeof(float) * n;
 		mem_fitness	= clCreateBuffer(context, CL_MEM_READ_WRITE, buffer_size, NULL, NULL);
 
 		// Get all of the stuff written and allocated
@@ -171,8 +169,8 @@ int computeFitness(int * c_position, int * c_velocity, int * p_angle, int * p_ve
 int main (int argc, const char * argv[]) {
     
 	// Problem size
-	const int generation_size = 300;
-	const int generation_count = 40;
+	const int generation_size = 500;
+	const int generation_count = 10;
 	const float mutation = 0.05;
 	
 	srand(time(NULL));
@@ -182,8 +180,8 @@ int main (int argc, const char * argv[]) {
 	int * c_velocity = (int *) malloc(generation_size * sizeof(int));
 	int * p_angle = (int *) malloc(generation_size * sizeof(int));
 	int * p_velocity = (int *) malloc(generation_size * sizeof(int));
-	float * fitness = (float *) malloc(generation_size * sizeof(float));
-	float fitness_sum = 0;
+	int * fitness = (int *) malloc(generation_size * sizeof(int));
+	int fitness_sum = 0;
 	int best_key = 0;
 
 	int * next_c_position = (int *) malloc(generation_size * sizeof(int));
@@ -197,7 +195,7 @@ int main (int argc, const char * argv[]) {
 		next_c_velocity[i] = (rand() % 2 == 1 ? 1 : -1) * rand() % 100;
 		next_p_angle[i] = (rand() % 2 == 1 ? 1 : -1) * rand() % 100;
 		next_p_velocity[i] = (rand() % 2 == 1 ? 1 : -1) * rand() % 100;
-		// fitness[i] = 0.f;
+		// fitness[i] = 0;
 	}
 
 	int n;
@@ -214,7 +212,7 @@ int main (int argc, const char * argv[]) {
 		computeFitness(c_position, c_velocity, p_angle, p_velocity, fitness, generation_size);
 
 		int fitness_max = 0;
-		float * border = (float *) malloc(generation_size * sizeof(float));
+		int * border = (int *) malloc(generation_size * sizeof(int));
 		for (int i = 0; i < generation_size; i++) {
 			fitness_sum += fitness[i];
 			if (fitness[i] > fitness_max) {
@@ -228,13 +226,14 @@ int main (int argc, const char * argv[]) {
 				border[i] = border[i - 1] + fitness[i];
 			}
 		}
+/* debug */		printf("best fitness = %d\n", fitness[best_key]);
 
 		for (int k = 0; k < generation_size; k++) {
 			int key_parent_1 = 0;
 			int key_parent_2 = 0;
 
 			// Get weighted entity (roulette wheel implementation)
-			float roll = (float)(rand() % (int) ceil(100 * fitness_sum)) / 100;
+			int roll = rand() % fitness_sum;
 			int i;
 			for (i = 0; i < generation_size; i++) {
 				if (roll < border[i]) {
@@ -243,7 +242,7 @@ int main (int argc, const char * argv[]) {
 			}
 			key_parent_1 = i;
 
-			roll = (float)(rand() % (int) ceil(100 * fitness_sum)) / 100;
+			roll = rand() % fitness_sum;
 			for (int i = 0; i < generation_size; i++) {
 				if (roll < border[i]) {
 					break;
@@ -251,26 +250,36 @@ int main (int argc, const char * argv[]) {
 			}
 			key_parent_2 = i;
 
-			// prepare next generation as combination of two parens, with mutation
+			// Prepare next generation as combination of two parens, with mutation
 			next_c_position[k] = c_position[key_parent_1] + mutation * (rand() % 2 == 1 ? 1 : -1) * (rand() % (c_position[key_parent_1] == 0 ? 1 : c_position[key_parent_1]));
 			next_c_velocity[k] = c_velocity[key_parent_1] + mutation * (rand() % 2 == 1 ? 1 : -1) * (rand() % (c_velocity[key_parent_1] == 0 ? 1 : c_velocity[key_parent_1]));
 			next_p_angle[k] = p_angle[key_parent_2] + mutation * (rand() % 2 == 1 ? 1 : -1) * (rand() % (p_angle[key_parent_2] == 0 ? 1 : p_angle[key_parent_2]));
 			next_p_velocity[k] = p_velocity[key_parent_2] + mutation * (rand() % 2 == 1 ? 1 : -1) * (rand() % (p_velocity[key_parent_2] == 0 ? 1 : p_velocity[key_parent_2]));
 		}
 	}
-	printf("Solution:\n\tfitness = %f\n\tc1 = %i\n\tc2 = %i\n\tc3 = %i\n\tc4 = %i\n\n", fitness[best_key]/* > 20 ? 20 : fitness[best_key]*/, c_position[best_key], c_velocity[best_key], p_angle[best_key], p_velocity[best_key]);
+	printf("Solution:\n\tfitness = %d\n\tc1 = %d\n\tc2 = %d\n\tc3 = %d\n\tc4 = %d\n\n", fitness[best_key], c_position[best_key], c_velocity[best_key], p_angle[best_key], p_velocity[best_key]);
 	
 	//return 0;
 	/* ******* DEBUG ******** */
 	
-	printf("GPU fitness:\n");
-	printf("\t%f\n", fitness[best_key]);
+	printf("GPU fitness again:\n");
+	int * test_c_position = (int *) malloc(sizeof(int));
+	int * test_c_velocity = (int *) malloc(sizeof(int));
+	int * test_p_angle = (int *) malloc(sizeof(int));
+	int * test_p_velocity = (int *) malloc(sizeof(int));
+	int * test_fitness = (int *) malloc(sizeof(int));
+	test_c_position[0] = c_position[best_key];
+	test_c_velocity[0] = c_velocity[best_key];
+	test_p_angle[0] = p_angle[best_key];
+	test_p_velocity[0] = p_velocity[best_key];
+	computeFitness(test_c_position, test_c_velocity, test_p_angle, test_p_velocity, test_fitness, 1);
+	printf("\t%d\n", test_fitness[0]);
 
 	printf("CPU fitness:\n");
 	
 	char command[254];
 	FILE *fp;
-	char path[254];
+	char output[254];
 	
 	sprintf(command, "/Volumes/Data/Projects/PoleBalanceGPU/Visualization/build/Debug/Visualization %d %d %d %d", c_position[best_key], c_velocity[best_key], p_angle[best_key], p_velocity[best_key]);	
 	fp = popen(command, "r");
@@ -278,9 +287,8 @@ int main (int argc, const char * argv[]) {
 		printf("Failed to run command\n" );
 		exit;
 	}
-	while (fgets(path, sizeof(path) - 1, fp) != NULL) {
-		printf("\t%s", path);
-		break;
+	while (fgets(output, sizeof(output), fp) != NULL) {
+		printf("\t%s", output);
 	}
 	
 	return 0;
