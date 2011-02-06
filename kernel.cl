@@ -15,7 +15,7 @@ __kernel void add(__global int *c_c_position, __global int *c_c_velocity, __glob
 	const float p_length = 0.5; // [meters] relative from pivot
 	const float p_mass = 0.1; // [kilograms]
 	const float c_mass = 1; // [kilograms]
-	const float time_total = 20; // [seconds]
+	const float time_total = 60; // [seconds]
 	const float time_step = 0.025; // [seconds]
 
 	/** default values */
@@ -29,12 +29,13 @@ __kernel void add(__global int *c_c_position, __global int *c_c_velocity, __glob
 
 	float t;
 	for (t = 0; t < time_total; t += time_step) {
+		// http://www.profjrwhite.com/system_dynamics/sdyn/s7/s7invp2/s7invp2.html (7.61, 7.62)
 		c_position = c_position + time_step * c_velocity;
 		p_angle = p_angle + time_step * p_velocity;
 
 		force = abs_force * (c_c_position[gid] * c_position + c_c_velocity[gid] * c_velocity + c_p_angle[gid] * p_angle + c_p_velocity[gid] * p_velocity) > 0 ? 1 : -1; // intentionally not signum, cart must always move
-		c_acceleration = (force + p_mass * p_length * sin(p_angle) * sin(p_angle) - p_mass * g_acceleration * cos(p_angle) * sin(p_angle)) / (c_mass + p_mass - p_mass * cos(p_angle) * cos(p_angle));
-		p_acceleration = (force * cos(p_angle) - g_acceleration * (p_mass + c_mass) * sin(p_angle) + p_mass * p_length * cos(p_angle) * sin(p_angle) * p_velocity) / (p_mass * p_length * cos(p_angle) * cos(p_angle) - (p_mass + c_mass) * p_length);
+		c_acceleration = (force + p_mass * p_length * sin(p_angle) * p_velocity * p_velocity - p_mass * g_acceleration * cos(p_angle) * sin(p_angle)) / (c_mass + p_mass - p_mass * cos(p_angle) * cos(p_angle));
+		p_acceleration = (force * cos(p_angle) - g_acceleration * (c_mass + p_mass) * sin(p_angle) + p_mass * p_length * cos(p_angle) * sin(p_angle) * p_velocity) / (p_mass * p_length * cos(p_angle) * cos(p_angle) - (c_mass + p_mass) * p_length);
 
 		c_velocity = c_velocity + time_step * c_acceleration;
 		p_velocity = p_velocity - time_step * p_acceleration; // why minus?
@@ -44,5 +45,5 @@ __kernel void add(__global int *c_c_position, __global int *c_c_velocity, __glob
 		}
 	}
 
-	fitness[gid] = t;
+	fitness[gid] = (float) t;
 }

@@ -43,7 +43,7 @@ int computeFitness(int * c_position, int * c_velocity, int * p_angle, int * p_ve
 	cl_kernel kernel[2];
 
 	cl_command_queue cmd_queue;
-	cl_context   context;
+	cl_context context;
 
 	cl_device_id cpu = NULL, device = NULL;
 
@@ -171,8 +171,8 @@ int computeFitness(int * c_position, int * c_velocity, int * p_angle, int * p_ve
 int main (int argc, const char * argv[]) {
     
 	// Problem size
-	const int generation_size = 500;
-	const int generation_count = 20;
+	const int generation_size = 300;
+	const int generation_count = 40;
 	const float mutation = 0.05;
 	
 	srand(time(NULL));
@@ -197,7 +197,7 @@ int main (int argc, const char * argv[]) {
 		next_c_velocity[i] = (rand() % 2 == 1 ? 1 : -1) * rand() % 100;
 		next_p_angle[i] = (rand() % 2 == 1 ? 1 : -1) * rand() % 100;
 		next_p_velocity[i] = (rand() % 2 == 1 ? 1 : -1) * rand() % 100;
-		//fitness[i] = 0.f;
+		// fitness[i] = 0.f;
 	}
 
 	int n;
@@ -258,8 +258,30 @@ int main (int argc, const char * argv[]) {
 			next_p_velocity[k] = p_velocity[key_parent_2] + mutation * (rand() % 2 == 1 ? 1 : -1) * (rand() % (p_velocity[key_parent_2] == 0 ? 1 : p_velocity[key_parent_2]));
 		}
 	}
+	printf("Solution:\n\tfitness = %f\n\tc1 = %i\n\tc2 = %i\n\tc3 = %i\n\tc4 = %i\n\n", fitness[best_key]/* > 20 ? 20 : fitness[best_key]*/, c_position[best_key], c_velocity[best_key], p_angle[best_key], p_velocity[best_key]);
+	
+	//return 0;
+	/* ******* DEBUG ******** */
+	
+	printf("GPU fitness:\n");
+	printf("\t%f\n", fitness[best_key]);
 
-	printf("Solution:\n\tfitness = %f\n\tc1 = %i\n\tc2 = %i\n\tc3 = %i\n\tc4 = %i\n", fitness[best_key] > 20 ? 20 : fitness[best_key], c_position[best_key], c_velocity[best_key], p_angle[best_key], p_velocity[best_key]);
-
+	printf("CPU fitness:\n");
+	
+	char command[254];
+	FILE *fp;
+	char path[254];
+	
+	sprintf(command, "/Volumes/Data/Projects/PoleBalanceGPU/Visualization/build/Debug/Visualization %d %d %d %d", c_position[best_key], c_velocity[best_key], p_angle[best_key], p_velocity[best_key]);	
+	fp = popen(command, "r");
+	if (fp == NULL) {
+		printf("Failed to run command\n" );
+		exit;
+	}
+	while (fgets(path, sizeof(path) - 1, fp) != NULL) {
+		printf("\t%s", path);
+		break;
+	}
+	
 	return 0;
 }
