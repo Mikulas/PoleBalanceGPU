@@ -11,7 +11,7 @@ __kernel void add(__global int *c_c_position, __global int *c_c_velocity, __glob
 	const float fail_position = 2.4; // [meters]
 	const float fail_angle = PI / 6; // [radians] 30 degrees
 	const float g_acceleration = -9.81; // [meters/second/second]
-	const float abs_force = 10; // [newtons]
+	const float abs_force = 1; // [newtons]
 	const float p_length = 0.5; // [meters] relative from pivot
 	const float p_mass = 0.1; // [kilograms]
 	const float c_mass = 1; // [kilograms]
@@ -35,7 +35,7 @@ __kernel void add(__global int *c_c_position, __global int *c_c_velocity, __glob
 		c_position = c_position + delta * c_velocity;
 		p_angle = p_angle + delta * p_velocity;
 
-		force = abs_force * (c_c_position[gid] * c_position + c_c_velocity[gid] * c_velocity + c_p_angle[gid] * p_angle + c_p_velocity[gid] * p_velocity) > 0 ? 1 : -1; // intentionally not signum, cart must always move
+		force = abs_force * ((c_c_position[gid] * c_position + c_c_velocity[gid] * c_velocity + c_p_angle[gid] * p_angle + c_p_velocity[gid] * p_velocity) > 0 ? 1 : -1); // intentionally not signum, cart must always move
 		c_acceleration = (force + p_mass * p_length * sin(p_angle) * p_velocity * p_velocity - p_mass * g_acceleration * cos(p_angle) * sin(p_angle)) / (c_mass + p_mass - p_mass * cos(p_angle) * cos(p_angle));
 		p_acceleration = (force * cos(p_angle) - g_acceleration * (c_mass + p_mass) * sin(p_angle) + p_mass * p_length * cos(p_angle) * sin(p_angle) * p_velocity) / (p_mass * p_length * cos(p_angle) * cos(p_angle) - (c_mass + p_mass) * p_length);
 
@@ -46,6 +46,5 @@ __kernel void add(__global int *c_c_position, __global int *c_c_velocity, __glob
 			break;
 		}
 	}
-
 	fitness[gid] = t;
 }
