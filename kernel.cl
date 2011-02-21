@@ -1,7 +1,11 @@
+/**
+ * @author Mikuláš Dítě
+ * @license Original BSD, see license.txt
+ */
 
 /**
  * c_ READ ONLY constants for computing force
- * fitness WRITE READ
+ * fitness WRITE ONLY
  */
 __kernel void add(__global int *c_c_position, __global int *c_c_velocity, __global int *c_p_angle, __global int *c_p_velocity, __global int *fitness)
 {
@@ -25,9 +29,9 @@ __kernel void add(__global int *c_c_position, __global int *c_c_velocity, __glob
 	float p_angle = PI / 36; // 5 degrees
 	float p_velocity = 0;
 	float p_acceleration = 0;
-	float force;
+	float force; // this is set in each step to ±abs_force
 
-	float delta = ((float)time_step / (float)1000);
+	float delta = ((float) time_step / (float) 1000);
 
 	int t;
 	for (t = 0; t < time_total; t += time_step) {
@@ -40,7 +44,7 @@ __kernel void add(__global int *c_c_position, __global int *c_c_velocity, __glob
 		p_acceleration = (force * cos(p_angle) - g_acceleration * (c_mass + p_mass) * sin(p_angle) + p_mass * p_length * cos(p_angle) * sin(p_angle) * p_velocity) / (p_mass * p_length * cos(p_angle) * cos(p_angle) - (c_mass + p_mass) * p_length);
 
 		c_velocity = c_velocity + delta * c_acceleration;
-		p_velocity = p_velocity - delta * p_acceleration; // why minus?
+		p_velocity = p_velocity - delta * p_acceleration;
 
 		if (c_position * (c_position > 0 ? 1 : -1) >= fail_position || p_angle * (p_angle > 0 ? 1 : -1) > fail_angle) {
 			break;

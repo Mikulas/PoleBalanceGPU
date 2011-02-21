@@ -25,6 +25,7 @@
 
 /* Begin PBXFileReference section */
 		08FB7796FE84155DC02AAC07 /* main.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = main.c; path = ../PoleBalanceGPU/main.c; sourceTree = "<group>"; };
+		1B1AAC061312D079004E0A9C /* license.txt */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text; path = license.txt; sourceTree = "<group>"; };
 		8DD76FB20486AB0100D96B5E /* Episode 3 */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = "Episode 3"; sourceTree = BUILT_PRODUCTS_DIR; };
 		CAE81CE6104D61E80081AA54 /* OpenCL.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = OpenCL.framework; path = /System/Library/Frameworks/OpenCL.framework; sourceTree = "<absolute>"; };
 		CAE81D08104D67870081AA54 /* kernel.cl */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.opencl; path = kernel.cl; sourceTree = "<group>"; };
@@ -57,6 +58,7 @@
 			children = (
 				08FB7796FE84155DC02AAC07 /* main.c */,
 				CAE81D08104D67870081AA54 /* kernel.cl */,
+				1B1AAC061312D079004E0A9C /* license.txt */,
 			);
 			name = Source;
 			sourceTree = "<group>";

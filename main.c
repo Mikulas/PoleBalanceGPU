@@ -1,5 +1,12 @@
 /**
- * must click on the file under "Executables" list item, then get info (or apple-I) then set the working directory to Project Directory (not build directory)
+ * @author Mikuláš Dítě
+ * @license Original BSD, see license.txt
+ */
+
+/**
+ * If the application fails during run time, the kernel could not be found in path and you
+ *  1) must click on the file under "Executables" list item, then get info (or apple-I), then
+ *  2) set the working directory to Project Directory (not build directory)
  */
 
 
@@ -197,12 +204,12 @@ int main (int argc, const char * argv[]) {
 	// Problem size
 #pragma mark Configuration
 	const int generation_size = 500;
-	const int generation_count = 10;
+	const int generation_count = 100;
 	const float mutation = 0.05;
 	
 	srand(time(NULL));
 	
-	// Allocate memory and a place for the results
+#pragma mark Allocate standard memory
 	int * c_position = (int *) malloc(generation_size * sizeof(int));
 	int * c_velocity = (int *) malloc(generation_size * sizeof(int));
 	int * p_angle = (int *) malloc(generation_size * sizeof(int));
@@ -216,7 +223,7 @@ int main (int argc, const char * argv[]) {
 	int * next_p_angle = (int *) malloc(generation_size * sizeof(int));
 	int * next_p_velocity = (int *) malloc(generation_size * sizeof(int));
 
-	// Generate first generation
+#pragma mark Generate first generation
 	for (int i = 0; i < generation_size; i++) {
 		next_c_position[i] = (rand() % 2 == 1 ? 1 : -1) * rand() % 100;
 		next_c_velocity[i] = (rand() % 2 == 1 ? 1 : -1) * rand() % 100;
@@ -225,6 +232,7 @@ int main (int argc, const char * argv[]) {
 		// fitness[i] = 0;
 	}
 
+#pragma mark Genetical algorithm
 	int n;
 	for (n = 0; n < generation_count; n++) {
 		c_position = next_c_position;
@@ -235,7 +243,6 @@ int main (int argc, const char * argv[]) {
 		fitness_sum = 0;
 		best_key = 0;
 
-		// Do the OpenCL calculation
 		computeFitness(c_position, c_velocity, p_angle, p_velocity, fitness, generation_size);
 
 		if (n == generation_count - 1) {
@@ -290,7 +297,7 @@ int main (int argc, const char * argv[]) {
 	printf("Solution:\n\tfitness = %d\n\tc1 = %d\n\tc2 = %d\n\tc3 = %d\n\tc4 = %d\n", fitness[best_key], c_position[best_key], c_velocity[best_key], p_angle[best_key], p_velocity[best_key]);
 	terminateGPU();
 
-	// return 0;
+	return 0; // comment to run tests
 
 
 #pragma mark -
