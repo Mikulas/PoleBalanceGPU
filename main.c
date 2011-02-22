@@ -23,8 +23,7 @@
 
 #pragma mark Utilities
 char * load_program_source(const char *filename)
-{ 
-
+{
 	struct stat statbuf;
 	FILE *fh; 
 	char *source; 
@@ -57,91 +56,82 @@ int initiated = 0;
 #pragma mark OpenCL context
 int initGPU(int n)
 {
-#pragma mark Device Information
-	{
-		// Find the CPU CL device, as a fallback
-		err = clGetDeviceIDs(NULL, CL_DEVICE_TYPE_CPU, 1, &cpu, NULL);
-		assert(err == CL_SUCCESS);
-		
-		// Find the GPU CL device, this is what we really want
-		// If there is no GPU device is CL capable, fall back to CPU
-		err |= clGetDeviceIDs(NULL, CL_DEVICE_TYPE_GPU, 1, &device, NULL);
-		if (err != CL_SUCCESS) device = cpu;
-		assert(device);
-		
-		// Get some information about the returned device
-		cl_char vendor_name[1024] = {0};
-		cl_char device_name[1024] = {0};
-		err |= clGetDeviceInfo(device, CL_DEVICE_VENDOR, sizeof(vendor_name), vendor_name, &returned_size);
-		err |= clGetDeviceInfo(device, CL_DEVICE_NAME, sizeof(device_name), device_name, &returned_size);
-		assert(err == CL_SUCCESS);
-		printf("Connecting to %s %s...", vendor_name, device_name);
-	}
-	
-#pragma mark Context and Command Queue
-	{
-		// Now create a context to perform our calculation with the 
-		// specified device 
-		context = clCreateContext(0, 1, &device, NULL, NULL, &err);
-		assert(err == CL_SUCCESS);
-		
-		// And also a command queue for the context
-		cmd_queue = clCreateCommandQueue(context, device, 0, NULL);
-	}
-	
-#pragma mark Program and Kernel Creation
-	{
-		// Load the program source from disk
-		// The kernel/program is the project directory and in Xcode the executable
-		// is set to launch from that directory hence we use a relative path
-		const char * filename = "kernel.cl";
-		char *program_source = load_program_source(filename);
-		program[0] = clCreateProgramWithSource(context, 1, (const char**)&program_source, NULL, &err);
-		assert(err == CL_SUCCESS);
-		
-		err |= clBuildProgram(program[0], 0, NULL, NULL, NULL, NULL);
-		assert(err == CL_SUCCESS);
-		
-		// Now create the kernel "objects" that we want to use in the example file 
-		kernel[0] = clCreateKernel(program[0], "add", &err);
-		assert(err == CL_SUCCESS);
-	}
+	#pragma mark Device Information
+	// Find the CPU CL device, as a fallback
+	err = clGetDeviceIDs(NULL, CL_DEVICE_TYPE_CPU, 1, &cpu, NULL);
+	assert(err == CL_SUCCESS);
 
-#pragma mark Memory Allocation
-	{
-		// Allocate memory on the device to hold our data and store the results into
-		buffer_size = sizeof(int) * n;
+	// Find the GPU CL device, this is what we really want
+	// If there is no GPU device is CL capable, fall back to CPU
+	err |= clGetDeviceIDs(NULL, CL_DEVICE_TYPE_GPU, 1, &device, NULL);
+	if (err != CL_SUCCESS) device = cpu;
+	assert(device);
 
-		mem_c_position = clCreateBuffer(context, CL_MEM_READ_ONLY, buffer_size, NULL, &err);
-		mem_c_velocity = clCreateBuffer(context, CL_MEM_READ_ONLY, buffer_size, NULL, &err);
-		mem_p_angle = clCreateBuffer(context, CL_MEM_READ_ONLY, buffer_size, NULL, &err);
-		mem_p_velocity = clCreateBuffer(context, CL_MEM_READ_ONLY, buffer_size, NULL, &err);
-		assert(err == CL_SUCCESS);
-		
-		mem_fitness	= clCreateBuffer(context, CL_MEM_WRITE_ONLY, buffer_size, NULL, &err);
-		assert(err == CL_SUCCESS);
+	// Get some information about the returned device
+	cl_char vendor_name[1024] = {0};
+	cl_char device_name[1024] = {0};
+	err |= clGetDeviceInfo(device, CL_DEVICE_VENDOR, sizeof(vendor_name), vendor_name, &returned_size);
+	err |= clGetDeviceInfo(device, CL_DEVICE_NAME, sizeof(device_name), device_name, &returned_size);
+	assert(err == CL_SUCCESS);
+	printf("Connecting to %s %s...", vendor_name, device_name);
 
-		// Get all of the stuff written and allocated
-		clFinish(cmd_queue);
-	}
+	#pragma mark Context and Command Queue
+	// Now create a context to perform our calculation with the 
+	// specified device 
+	context = clCreateContext(0, 1, &device, NULL, NULL, &err);
+	assert(err == CL_SUCCESS);
+
+	// And also a command queue for the context
+	cmd_queue = clCreateCommandQueue(context, device, 0, NULL);
+
+	#pragma mark Program and Kernel Creation
+	// Load the program source from disk
+	// The kernel/program is the project directory and in Xcode the executable
+	// is set to launch from that directory hence we use a relative path
+	const char * filename = "kernel.cl";
+	char *program_source = load_program_source(filename);
+	program[0] = clCreateProgramWithSource(context, 1, (const char**)&program_source, NULL, &err);
+	assert(err == CL_SUCCESS);
+
+	err |= clBuildProgram(program[0], 0, NULL, NULL, NULL, NULL);
+	assert(err == CL_SUCCESS);
+
+	// Now create the kernel "objects" that we want to use in the example file 
+	kernel[0] = clCreateKernel(program[0], "add", &err);
+	assert(err == CL_SUCCESS);
+
+	#pragma mark Memory Allocation
+	// Allocate memory on the device to hold our data and store the results into
+	buffer_size = sizeof(int) * n;
+
+	mem_c_position = clCreateBuffer(context, CL_MEM_READ_ONLY, buffer_size, NULL, &err);
+	mem_c_velocity = clCreateBuffer(context, CL_MEM_READ_ONLY, buffer_size, NULL, &err);
+	mem_p_angle = clCreateBuffer(context, CL_MEM_READ_ONLY, buffer_size, NULL, &err);
+	mem_p_velocity = clCreateBuffer(context, CL_MEM_READ_ONLY, buffer_size, NULL, &err);
+	assert(err == CL_SUCCESS);
+
+	mem_fitness = clCreateBuffer(context, CL_MEM_WRITE_ONLY, buffer_size, NULL, &err);
+	assert(err == CL_SUCCESS);
+
+	// Get all of the stuff written and allocated
+	clFinish(cmd_queue);
+
 	printf(" done\n");
-	
+
 	return err; // CL_SUCCESS
 }
 
 void terminateGPU()
 {
 	#pragma mark Teardown
-	{
-		clReleaseMemObject(mem_c_position);
-		clReleaseMemObject(mem_c_velocity);
-		clReleaseMemObject(mem_p_angle);
-		clReleaseMemObject(mem_p_velocity);
-		clReleaseMemObject(mem_fitness);
-		
-		clReleaseCommandQueue(cmd_queue);
-		clReleaseContext(context);
-	}
+	clReleaseMemObject(mem_c_position);
+	clReleaseMemObject(mem_c_velocity);
+	clReleaseMemObject(mem_p_angle);
+	clReleaseMemObject(mem_p_velocity);
+	clReleaseMemObject(mem_fitness);
+
+	clReleaseCommandQueue(cmd_queue);
+	clReleaseContext(context);
 }
 
 #pragma mark -
@@ -152,64 +142,56 @@ int computeFitness(int * c_position, int * c_velocity, int * p_angle, int * p_ve
 		initGPU(n);
 		initiated = 1;
 	}
-	
-#pragma mark Writing memory
-	{
-		// Allocate memory on the device to hold our data and store the results into
-		buffer_size = sizeof(int) * n;
 
-		err = clEnqueueWriteBuffer(cmd_queue, mem_c_position, CL_TRUE, 0, buffer_size, (void *) c_position, 0, NULL, NULL);
-		err |= clEnqueueWriteBuffer(cmd_queue, mem_c_velocity, CL_TRUE, 0, buffer_size, (void *) c_velocity, 0, NULL, NULL);
-		err |= clEnqueueWriteBuffer(cmd_queue, mem_p_angle, CL_TRUE, 0, buffer_size, (void *) p_angle, 0, NULL, NULL);
-		err |= clEnqueueWriteBuffer(cmd_queue, mem_p_velocity, CL_TRUE, 0, buffer_size, (void *) p_velocity, 0, NULL, NULL);
-		assert(err == CL_SUCCESS);
+	#pragma mark Writing memory
+	// Allocate memory on the device to hold our data and store the results into
+	buffer_size = sizeof(int) * n;
 
-		// Get all of the stuff written and allocated
-		clFinish(cmd_queue);
-	}
+	err = clEnqueueWriteBuffer(cmd_queue, mem_c_position, CL_TRUE, 0, buffer_size, (void *) c_position, 0, NULL, NULL);
+	err |= clEnqueueWriteBuffer(cmd_queue, mem_c_velocity, CL_TRUE, 0, buffer_size, (void *) c_velocity, 0, NULL, NULL);
+	err |= clEnqueueWriteBuffer(cmd_queue, mem_p_angle, CL_TRUE, 0, buffer_size, (void *) p_angle, 0, NULL, NULL);
+	err |= clEnqueueWriteBuffer(cmd_queue, mem_p_velocity, CL_TRUE, 0, buffer_size, (void *) p_velocity, 0, NULL, NULL);
+	assert(err == CL_SUCCESS);
 
-#pragma mark Kernel Arguments
-	{
-		// Now setup the arguments to our kernel
-		err  = clSetKernelArg(kernel[0], 0, sizeof(cl_mem), (void *) &mem_c_position);
-		err |= clSetKernelArg(kernel[0], 1, sizeof(cl_mem), (void *) &mem_c_velocity);
-		err |= clSetKernelArg(kernel[0], 2, sizeof(cl_mem), (void *) &mem_p_angle);
-		err |= clSetKernelArg(kernel[0], 3, sizeof(cl_mem), (void *) &mem_p_velocity);
-		err |= clSetKernelArg(kernel[0], 4, sizeof(cl_mem), (void *) &mem_fitness);
-		assert(err == CL_SUCCESS);
-	}
+	// Get all of the stuff written and allocated
+	clFinish(cmd_queue);
 
-#pragma mark Execution and Reading memory
-	{
-		// Run the calculation by enqueuing it and forcing the 
-		// command queue to complete the task
-		size_t global_work_size = n;
-		err = clEnqueueNDRangeKernel(cmd_queue, kernel[0], 1, NULL, &global_work_size, NULL, 0, NULL, NULL);
-		assert(err == CL_SUCCESS);
-		clFinish(cmd_queue);
+	#pragma mark Kernel Arguments
+	// Now setup the arguments to our kernel
+	err  = clSetKernelArg(kernel[0], 0, sizeof(cl_mem), (void *) &mem_c_position);
+	err |= clSetKernelArg(kernel[0], 1, sizeof(cl_mem), (void *) &mem_c_velocity);
+	err |= clSetKernelArg(kernel[0], 2, sizeof(cl_mem), (void *) &mem_p_angle);
+	err |= clSetKernelArg(kernel[0], 3, sizeof(cl_mem), (void *) &mem_p_velocity);
+	err |= clSetKernelArg(kernel[0], 4, sizeof(cl_mem), (void *) &mem_fitness);
+	assert(err == CL_SUCCESS);
 
-		// Once finished read back the results from the answer 
-		// array into the results array
-		err = clEnqueueReadBuffer(cmd_queue, mem_fitness, CL_TRUE, 0, buffer_size, fitness, 0, NULL, NULL);
-		assert(err == CL_SUCCESS);
-		clFinish(cmd_queue);
-	}
+	#pragma mark Execution and Reading memory
+	// Run the calculation by enqueuing it and forcing the 
+	// command queue to complete the task
+	size_t global_work_size = n;
+	err = clEnqueueNDRangeKernel(cmd_queue, kernel[0], 1, NULL, &global_work_size, NULL, 0, NULL, NULL);
+	assert(err == CL_SUCCESS);
+	clFinish(cmd_queue);
+
+	// Once finished read back the results from the answer 
+	// array into the results array
+	err = clEnqueueReadBuffer(cmd_queue, mem_fitness, CL_TRUE, 0, buffer_size, fitness, 0, NULL, NULL);
+	assert(err == CL_SUCCESS);
+	clFinish(cmd_queue);
 
 	return CL_SUCCESS;
 }
 
 #pragma mark -
 int main (int argc, const char * argv[]) {
-    
-	// Problem size
-#pragma mark Configuration
+	#pragma mark Configuration
 	const int generation_size = 500;
 	const int generation_count = 100;
 	const float mutation = 0.05;
-	
+
 	srand(time(NULL));
-	
-#pragma mark Allocate standard memory
+
+	#pragma mark Allocate standard memory
 	int * c_position = (int *) malloc(generation_size * sizeof(int));
 	int * c_velocity = (int *) malloc(generation_size * sizeof(int));
 	int * p_angle = (int *) malloc(generation_size * sizeof(int));
@@ -223,7 +205,7 @@ int main (int argc, const char * argv[]) {
 	int * next_p_angle = (int *) malloc(generation_size * sizeof(int));
 	int * next_p_velocity = (int *) malloc(generation_size * sizeof(int));
 
-#pragma mark Generate first generation
+	#pragma mark Generate first generation
 	for (int i = 0; i < generation_size; i++) {
 		next_c_position[i] = (rand() % 2 == 1 ? 1 : -1) * rand() % 100;
 		next_c_velocity[i] = (rand() % 2 == 1 ? 1 : -1) * rand() % 100;
@@ -232,7 +214,7 @@ int main (int argc, const char * argv[]) {
 		// fitness[i] = 0;
 	}
 
-#pragma mark Genetical algorithm
+	#pragma mark Genetical algorithm
 	int n;
 	for (n = 0; n < generation_count; n++) {
 		c_position = next_c_position;
@@ -245,10 +227,8 @@ int main (int argc, const char * argv[]) {
 
 		computeFitness(c_position, c_velocity, p_angle, p_velocity, fitness, generation_size);
 
-		if (n == generation_count - 1) {
-			break;
-		}
-		
+		if (n == generation_count - 1) break; // prevent computing generation in the last cycle
+
 		int fitness_max = 0;
 		int * border = (int *) malloc(generation_size * sizeof(int));
 		for (int i = 0; i < generation_size; i++) {
@@ -300,12 +280,12 @@ int main (int argc, const char * argv[]) {
 	return 0; // comment to run tests
 
 
-#pragma mark -
-#pragma mark Debug
+	#pragma mark -
+	#pragma mark Debug
 	printf("\nENTERING DEBUG SCOPE:\n\n");
 	initiated = 0; // so the context is new
 
-#pragma mark - GPU test
+	#pragma mark - GPU test
 	printf("GPU fitness again:\n");
 	int k = generation_size;
 	int * test_c_position = (int *) malloc(k * sizeof(int));
@@ -326,13 +306,14 @@ int main (int argc, const char * argv[]) {
 	}
 	terminateGPU();
 
-#pragma mark - CPU test
+	#pragma mark - CPU test and Visualization
 	printf("CPU fitness:\n");
 	
 	char command[254];
 	FILE *fp;
 	char output[254];
-	
+
+	// link this to to the Visualization binary
 	sprintf(command, "/Volumes/Data/Projects/PoleBalanceGPU/Visualization/build/Debug/Visualization %d %d %d %d", c_position[best_key], c_velocity[best_key], p_angle[best_key], p_velocity[best_key]);	
 	fp = popen(command, "r");
 	if (fp == NULL) {
@@ -344,6 +325,7 @@ int main (int argc, const char * argv[]) {
 	}
 	int cpu_fitness = atoi(output);
 
+	// this might fail from time to time since CPU and GPU round implementation differs
 	assert(fitness[best_key] == test_fitness[0] && fitness[best_key] == cpu_fitness);
 	
 	return 0;
