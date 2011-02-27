@@ -185,9 +185,10 @@ int computeFitness(int * c_position, int * c_velocity, int * p_angle, int * p_ve
 #pragma mark -
 int main (int argc, const char * argv[]) {
 	#pragma mark Configuration
-	const int generation_size = 500;
-	const int generation_count = 100;
-	const float mutation = 0.05;
+	const int generation_size = 40;
+	const int generation_count = 10000;
+	const float mutation = 0.1;
+	const int time_total = 60000; // should be the same as in kernel.cl
 
 	srand(time(NULL));
 
@@ -207,15 +208,17 @@ int main (int argc, const char * argv[]) {
 
 	#pragma mark Generate first generation
 	for (int i = 0; i < generation_size; i++) {
-		next_c_position[i] = (rand() % 2 == 1 ? 1 : -1) * rand() % 100;
-		next_c_velocity[i] = (rand() % 2 == 1 ? 1 : -1) * rand() % 100;
-		next_p_angle[i] = (rand() % 2 == 1 ? 1 : -1) * rand() % 100;
-		next_p_velocity[i] = (rand() % 2 == 1 ? 1 : -1) * rand() % 100;
+		int sign = rand() % 2 == 1 ? 1 : -1;
+		next_c_position[i] = sign * rand() % 1000;
+		next_c_velocity[i] = sign * rand() % 1000;
+		next_p_angle[i] = sign * rand() % 1000;
+		next_p_velocity[i] = sign * rand() % 1000;
 		// fitness[i] = 0;
 	}
 
 	#pragma mark Genetical algorithm
 	int n;
+	int last_sum = 0;
 	for (n = 0; n < generation_count; n++) {
 		c_position = next_c_position;
 		c_velocity = next_c_velocity;
@@ -227,9 +230,11 @@ int main (int argc, const char * argv[]) {
 
 		computeFitness(c_position, c_velocity, p_angle, p_velocity, fitness, generation_size);
 
-		if (n == generation_count - 1) break; // prevent computing generation in the last cycle
+		// prevent computing generation in the last cycle
+		if (n == generation_count - 1) break;
 
 		int fitness_max = 0;
+		// TODO: allocate it only once
 		int * border = (int *) malloc(generation_size * sizeof(int));
 		for (int i = 0; i < generation_size; i++) {
 			fitness_sum += fitness[i];
@@ -244,8 +249,18 @@ int main (int argc, const char * argv[]) {
 				border[i] = border[i - 1] + fitness[i];
 			}
 		}
+		// break if best solution is already found
+		if (fitness_max >= time_total) break;
 
-		for (int k = 0; k < generation_size; k++) {
+		//printf("gen[%d] best_fitness = \t%d\t[%d]\t%s\n", n, fitness_max, fitness_sum, last_sum < fitness_sum ? "up" : "FALLS");
+		last_sum = fitness_sum;
+		// Elite - always copy the best one
+		next_c_position[0] = c_position[best_key];
+		next_c_velocity[0] = c_velocity[best_key];
+		next_p_angle[0] = p_angle[best_key];
+		next_p_velocity[0] = p_velocity[best_key];
+
+		for (int k = 1; k < generation_size; k++) {			
 			int key_parent_1 = 0;
 			int key_parent_2 = 0;
 
@@ -260,12 +275,14 @@ int main (int argc, const char * argv[]) {
 			key_parent_1 = i;
 
 			roll = rand() % fitness_sum;
-			for (int i = 0; i < generation_size; i++) {
+			for (i = 0; i < generation_size; i++) {
 				if (roll < border[i]) {
 					break;
 				}
 			}
 			key_parent_2 = i;
+
+			printf("%d\t", c_position[k]);
 
 			// Prepare next generation as combination of two parens, with mutation
 			next_c_position[k] = c_position[key_parent_1] + mutation * (rand() % 2 == 1 ? 1 : -1) * (rand() % (c_position[key_parent_1] == 0 ? 1 : c_position[key_parent_1]));
@@ -273,6 +290,7 @@ int main (int argc, const char * argv[]) {
 			next_p_angle[k] = p_angle[key_parent_2] + mutation * (rand() % 2 == 1 ? 1 : -1) * (rand() % (p_angle[key_parent_2] == 0 ? 1 : p_angle[key_parent_2]));
 			next_p_velocity[k] = p_velocity[key_parent_2] + mutation * (rand() % 2 == 1 ? 1 : -1) * (rand() % (p_velocity[key_parent_2] == 0 ? 1 : p_velocity[key_parent_2]));
 		}
+		printf("\n");
 	}
 	printf("Solution:\n\tfitness = %d\n\tc1 = %d\n\tc2 = %d\n\tc3 = %d\n\tc4 = %d\n", fitness[best_key], c_position[best_key], c_velocity[best_key], p_angle[best_key], p_velocity[best_key]);
 	terminateGPU();
