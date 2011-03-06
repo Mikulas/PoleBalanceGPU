@@ -19,7 +19,7 @@ __kernel void add(__global int *c_c_position, __global int *c_c_velocity, __glob
 	const float p_length = 0.5; // [meters] relative from pivot
 	const float p_mass = 0.1; // [kilograms]
 	const float c_mass = 1; // [kilograms]
-	const int time_total = 60000; // [miliseconds]
+	const int time_total = 20000; // [miliseconds]
 	const int time_step = 25; // [miliseconds]
 
 	/** default values */

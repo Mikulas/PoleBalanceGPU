@@ -20,7 +20,6 @@
 
 #include <OpenCL/OpenCL.h>
 
-
 #pragma mark Utilities
 char * load_program_source(const char *filename)
 {
@@ -51,6 +50,13 @@ size_t returned_size = 0;
 size_t buffer_size;
 cl_mem mem_c_position, mem_c_velocity, mem_p_angle, mem_p_velocity, mem_fitness;
 int initiated = 0;
+
+#pragma mark Configuration
+const int generation_size = 100;
+const int generation_count = 300;
+const float mutation = 0.3;
+const int time_total = 20000; // should be the same as in kernel.cl
+const int tournament_size = 10;
 
 #pragma mark -
 #pragma mark OpenCL context
@@ -182,14 +188,27 @@ int computeFitness(int * c_position, int * c_velocity, int * p_angle, int * p_ve
 	return CL_SUCCESS;
 }
 
-#pragma mark -
-int main (int argc, const char * argv[]) {
-	#pragma mark Configuration
-	const int generation_size = 40;
-	const int generation_count = 10000;
-	const float mutation = 0.1;
-	const int time_total = 60000; // should be the same as in kernel.cl
+// tournament selection
+int getParentKey(int * fitness)
+{
+	int key = -1;
+	int * arena = (int *) malloc(tournament_size * sizeof(int));
 
+	for (int l = 0; l < tournament_size; l++) {
+		arena[l] = rand() % generation_size;
+	}
+
+	for (int l = 0; l < tournament_size; l++) {
+		if (key == -1 || fitness[ arena[l] ] > fitness[key])
+			key = arena[l];
+	}
+
+	return key;
+}
+
+#pragma mark -
+int main (int argc, const char * argv[])
+{
 	srand(time(NULL));
 
 	#pragma mark Allocate standard memory
@@ -198,7 +217,6 @@ int main (int argc, const char * argv[]) {
 	int * p_angle = (int *) malloc(generation_size * sizeof(int));
 	int * p_velocity = (int *) malloc(generation_size * sizeof(int));
 	int * fitness = (int *) malloc(generation_size * sizeof(int));
-	int fitness_sum = 0;
 	int best_key = 0;
 
 	int * next_c_position = (int *) malloc(generation_size * sizeof(int));
@@ -218,14 +236,13 @@ int main (int argc, const char * argv[]) {
 
 	#pragma mark Genetical algorithm
 	int n;
-	int last_sum = 0;
+	int fitness_sum = 0;
 	for (n = 0; n < generation_count; n++) {
 		c_position = next_c_position;
 		c_velocity = next_c_velocity;
 		p_angle = next_p_angle;
 		p_velocity = next_p_velocity;
 
-		fitness_sum = 0;
 		best_key = 0;
 
 		computeFitness(c_position, c_velocity, p_angle, p_velocity, fitness, generation_size);
@@ -233,27 +250,16 @@ int main (int argc, const char * argv[]) {
 		// prevent computing generation in the last cycle
 		if (n == generation_count - 1) break;
 
-		int fitness_max = 0;
-		// TODO: allocate it only once
-		int * border = (int *) malloc(generation_size * sizeof(int));
 		for (int i = 0; i < generation_size; i++) {
 			fitness_sum += fitness[i];
-			if (fitness[i] > fitness_max) {
-				fitness_max = fitness[i];
+			if (fitness[i] > fitness[best_key]) {
 				best_key = i;
-			}
-
-			if (i == 0) {
-				border[i] = fitness[i];
-			} else {
-				border[i] = border[i - 1] + fitness[i];
 			}
 		}
 		// break if best solution is already found
-		if (fitness_max >= time_total) break;
+		if (fitness[best_key] >= time_total) break;
 
-		//printf("gen[%d] best_fitness = \t%d\t[%d]\t%s\n", n, fitness_max, fitness_sum, last_sum < fitness_sum ? "up" : "FALLS");
-		last_sum = fitness_sum;
+		//printf("gen[%d] best_fitness = \t%d\n", n, fitness[best_key]);
 		// Elite - always copy the best one
 		next_c_position[0] = c_position[best_key];
 		next_c_velocity[0] = c_velocity[best_key];
@@ -261,43 +267,24 @@ int main (int argc, const char * argv[]) {
 		next_p_velocity[0] = p_velocity[best_key];
 
 		for (int k = 1; k < generation_size; k++) {			
-			int key_parent_1 = 0;
-			int key_parent_2 = 0;
+			int key_parent_1 = getParentKey(fitness);
+			int key_parent_2 = getParentKey(fitness);
 
-			// Get weighted entity (roulette wheel implementation)
-			int roll = rand() % fitness_sum;
-			int i;
-			for (i = 0; i < generation_size; i++) {
-				if (roll < border[i]) {
-					break;
-				}
-			}
-			key_parent_1 = i;
-
-			roll = rand() % fitness_sum;
-			for (i = 0; i < generation_size; i++) {
-				if (roll < border[i]) {
-					break;
-				}
-			}
-			key_parent_2 = i;
-
-			printf("%d\t", c_position[k]);
-
-			// Prepare next generation as combination of two parens, with mutation
-			next_c_position[k] = c_position[key_parent_1] + mutation * (rand() % 2 == 1 ? 1 : -1) * (rand() % (c_position[key_parent_1] == 0 ? 1 : c_position[key_parent_1]));
-			next_c_velocity[k] = c_velocity[key_parent_1] + mutation * (rand() % 2 == 1 ? 1 : -1) * (rand() % (c_velocity[key_parent_1] == 0 ? 1 : c_velocity[key_parent_1]));
-			next_p_angle[k] = p_angle[key_parent_2] + mutation * (rand() % 2 == 1 ? 1 : -1) * (rand() % (p_angle[key_parent_2] == 0 ? 1 : p_angle[key_parent_2]));
-			next_p_velocity[k] = p_velocity[key_parent_2] + mutation * (rand() % 2 == 1 ? 1 : -1) * (rand() % (p_velocity[key_parent_2] == 0 ? 1 : p_velocity[key_parent_2]));
+			// Prepare next generation as combination of two parents, with mutation
+			int sign = rand() % 2 ? 1 : -1;
+			//printf("%d\t", c_position[k]);
+			next_c_position[k] = c_position[key_parent_1] + mutation * sign * 10;
+			next_c_velocity[k] = c_velocity[key_parent_1] + mutation * sign * 10;
+			next_p_angle[k] = p_angle[key_parent_2] + mutation * sign * 10;
+			next_p_velocity[k] = p_velocity[key_parent_2] + mutation * sign * 10;
 		}
-		printf("\n");
+		printf("generation %d  \tavg = %f\t best = %d\n", n, (double)fitness_sum / (double)generation_size, fitness[best_key]);
+		fitness_sum = 0;
 	}
 	printf("Solution:\n\tfitness = %d\n\tc1 = %d\n\tc2 = %d\n\tc3 = %d\n\tc4 = %d\n", fitness[best_key], c_position[best_key], c_velocity[best_key], p_angle[best_key], p_velocity[best_key]);
 	terminateGPU();
 
-	return 0; // comment to run tests
-
-
+#ifdef DEBUG
 	#pragma mark -
 	#pragma mark Debug
 	printf("\nENTERING DEBUG SCOPE:\n\n");
@@ -345,6 +332,7 @@ int main (int argc, const char * argv[]) {
 
 	// this might fail from time to time since CPU and GPU round implementation differs
 	assert(fitness[best_key] == test_fitness[0] && fitness[best_key] == cpu_fitness);
-	
+#endif	
+
 	return 0;
 }
