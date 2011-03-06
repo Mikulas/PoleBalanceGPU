@@ -17,6 +17,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <time.h>
+#include <math.h>
 
 #include <OpenCL/OpenCL.h>
 
@@ -59,7 +60,54 @@ const int time_total = 20000; // should be the same as in kernel.cl
 const int tournament_size = 10;
 
 #pragma mark -
-#pragma mark OpenCL context
+#pragma mark CPU
+void computeFitnessCPU(int *c_c_position, int *c_c_velocity, int *c_p_angle, int *c_p_velocity, int *fitness)
+{
+	const float fail_position = 2.4; // [meters]
+	const float fail_angle = M_PI / 6; // [radians] 30 degrees
+	const float g_acceleration = -9.81; // [meters/second/second]
+	const float abs_force = 1; // [newtons]
+	const float p_length = 0.5; // [meters] relative from pivot
+	const float p_mass = 0.1; // [kilograms]
+	const float c_mass = 1; // [kilograms]
+	// const int time_total = 20000; // [miliseconds]
+	const int time_step = 25; // [miliseconds]
+	
+	float delta = ((float) time_step / (float) 1000);
+	
+	for (int gid = 0; gid < generation_size; gid++) {
+		/** default values */
+		float c_position = 0;
+		float c_velocity = 0;
+		float c_acceleration = 0;
+		float p_angle = M_PI / 36; // 5 degrees
+		float p_velocity = 0;
+		float p_acceleration = 0;
+		float force; // this is set in each step to ±abs_force
+		
+		int t;
+		for (t = 0; t < time_total; t += time_step) {
+			// http://www.profjrwhite.com/system_dynamics/sdyn/s7/s7invp2/s7invp2.html (7.61, 7.62)
+			c_position = c_position + delta * c_velocity;
+			p_angle = p_angle + delta * p_velocity;
+
+			force = abs_force * ((c_c_position[gid] * c_position + c_c_velocity[gid] * c_velocity + c_p_angle[gid] * p_angle + c_p_velocity[gid] * p_velocity) > 0 ? 1 : -1); // intentionally not signum, cart must always move
+			c_acceleration = (force + p_mass * p_length * sin(p_angle) * p_velocity * p_velocity - p_mass * g_acceleration * cos(p_angle) * sin(p_angle)) / (c_mass + p_mass - p_mass * cos(p_angle) * cos(p_angle));
+			p_acceleration = (force * cos(p_angle) - g_acceleration * (c_mass + p_mass) * sin(p_angle) + p_mass * p_length * cos(p_angle) * sin(p_angle) * p_velocity) / (p_mass * p_length * cos(p_angle) * cos(p_angle) - (c_mass + p_mass) * p_length);
+
+			c_velocity = c_velocity + delta * c_acceleration;
+			p_velocity = p_velocity - delta * p_acceleration;
+
+			if (c_position * (c_position > 0 ? 1 : -1) >= fail_position || p_angle * (p_angle > 0 ? 1 : -1) > fail_angle) {
+				break;
+			}
+		}
+		fitness[gid] = t;
+	}
+}
+
+#pragma mark -
+#pragma mark GPU
 int initGPU(int n)
 {
 	#pragma mark Device Information
@@ -79,7 +127,7 @@ int initGPU(int n)
 	err |= clGetDeviceInfo(device, CL_DEVICE_VENDOR, sizeof(vendor_name), vendor_name, &returned_size);
 	err |= clGetDeviceInfo(device, CL_DEVICE_NAME, sizeof(device_name), device_name, &returned_size);
 	assert(err == CL_SUCCESS);
-	printf("Connecting to %s %s...", vendor_name, device_name);
+	//printf("Connecting to %s %s...", vendor_name, device_name);
 
 	#pragma mark Context and Command Queue
 	// Now create a context to perform our calculation with the 
@@ -122,7 +170,7 @@ int initGPU(int n)
 	// Get all of the stuff written and allocated
 	clFinish(cmd_queue);
 
-	printf(" done\n");
+	//printf(" done\n");
 
 	return err; // CL_SUCCESS
 }
@@ -130,6 +178,8 @@ int initGPU(int n)
 void terminateGPU()
 {
 	#pragma mark Teardown
+	initiated = 0;
+
 	clReleaseMemObject(mem_c_position);
 	clReleaseMemObject(mem_c_velocity);
 	clReleaseMemObject(mem_p_angle);
@@ -140,9 +190,7 @@ void terminateGPU()
 	clReleaseContext(context);
 }
 
-#pragma mark -
-#pragma mark Generation context
-int computeFitness(int * c_position, int * c_velocity, int * p_angle, int * p_velocity, int * fitness, int n)
+int computeFitnessGPU(int * c_position, int * c_velocity, int * p_angle, int * p_velocity, int * fitness, int n)
 {
 	if (!initiated) {
 		initGPU(n);
@@ -212,127 +260,96 @@ int main (int argc, const char * argv[])
 	srand(time(NULL));
 
 	#pragma mark Allocate standard memory
-	int * c_position = (int *) malloc(generation_size * sizeof(int));
-	int * c_velocity = (int *) malloc(generation_size * sizeof(int));
-	int * p_angle = (int *) malloc(generation_size * sizeof(int));
-	int * p_velocity = (int *) malloc(generation_size * sizeof(int));
-	int * fitness = (int *) malloc(generation_size * sizeof(int));
-	int best_key = 0;
+	for (int test_sample = 0; test_sample < 10000; test_sample++) {
+		int time_cpu = 0;
+		int time_gpu = 0;
 
-	int * next_c_position = (int *) malloc(generation_size * sizeof(int));
-	int * next_c_velocity = (int *) malloc(generation_size * sizeof(int));
-	int * next_p_angle = (int *) malloc(generation_size * sizeof(int));
-	int * next_p_velocity = (int *) malloc(generation_size * sizeof(int));
+		for (int isGPU = 1; isGPU >= 0; isGPU--) {
+			if (isGPU)
+				time_gpu = clock();
+			else
+				time_cpu = clock();
 
-	#pragma mark Generate first generation
-	for (int i = 0; i < generation_size; i++) {
-		int sign = rand() % 2 == 1 ? 1 : -1;
-		next_c_position[i] = sign * rand() % 1000;
-		next_c_velocity[i] = sign * rand() % 1000;
-		next_p_angle[i] = sign * rand() % 1000;
-		next_p_velocity[i] = sign * rand() % 1000;
-		// fitness[i] = 0;
-	}
+			int * c_position = (int *) malloc(generation_size * sizeof(int));
+			int * c_velocity = (int *) malloc(generation_size * sizeof(int));
+			int * p_angle = (int *) malloc(generation_size * sizeof(int));
+			int * p_velocity = (int *) malloc(generation_size * sizeof(int));
+			int * fitness = (int *) malloc(generation_size * sizeof(int));
+			int best_key = 0;
+			
+			int * next_c_position = (int *) malloc(generation_size * sizeof(int));
+			int * next_c_velocity = (int *) malloc(generation_size * sizeof(int));
+			int * next_p_angle = (int *) malloc(generation_size * sizeof(int));
+			int * next_p_velocity = (int *) malloc(generation_size * sizeof(int));
+			
+			#pragma mark Generate first generation
+			for (int i = 0; i < generation_size; i++) {
+				int sign = rand() % 2 == 1 ? 1 : -1;
+				next_c_position[i] = sign * rand() % 1000;
+				next_c_velocity[i] = sign * rand() % 1000;
+				next_p_angle[i] = sign * rand() % 1000;
+				next_p_velocity[i] = sign * rand() % 1000;
+			}
 
-	#pragma mark Genetical algorithm
-	int n;
-	int fitness_sum = 0;
-	for (n = 0; n < generation_count; n++) {
-		c_position = next_c_position;
-		c_velocity = next_c_velocity;
-		p_angle = next_p_angle;
-		p_velocity = next_p_velocity;
+			#pragma mark Genetical algorithm
+			int n;
+			int fitness_sum = 0;
+			for (n = 0; n < generation_count; n++) {
+				c_position = next_c_position;
+				c_velocity = next_c_velocity;
+				p_angle = next_p_angle;
+				p_velocity = next_p_velocity;
+				
+				best_key = 0;
 
-		best_key = 0;
+				if (isGPU)
+					computeFitnessGPU(c_position, c_velocity, p_angle, p_velocity, fitness, generation_size);
+				else
+					computeFitnessCPU(c_position, c_velocity, p_angle, p_velocity, fitness);
 
-		computeFitness(c_position, c_velocity, p_angle, p_velocity, fitness, generation_size);
-
-		// prevent computing generation in the last cycle
-		if (n == generation_count - 1) break;
-
-		for (int i = 0; i < generation_size; i++) {
-			fitness_sum += fitness[i];
-			if (fitness[i] > fitness[best_key]) {
-				best_key = i;
+				// prevent computing generation in the last cycle
+				if (n == generation_count - 1) break;
+				
+				for (int i = 0; i < generation_size; i++) {
+					fitness_sum += fitness[i];
+					if (fitness[i] > fitness[best_key]) {
+						best_key = i;
+					}
+				}
+				// break if best solution is already found
+				if (fitness[best_key] >= time_total) break;
+				
+				//printf("gen[%d] best_fitness = \t%d\n", n, fitness[best_key]);
+				// Elite - always copy the best one
+				next_c_position[0] = c_position[best_key];
+				next_c_velocity[0] = c_velocity[best_key];
+				next_p_angle[0] = p_angle[best_key];
+				next_p_velocity[0] = p_velocity[best_key];
+				
+				for (int k = 1; k < generation_size; k++) {			
+					int key_parent_1 = getParentKey(fitness);
+					int key_parent_2 = getParentKey(fitness);
+					
+					// Prepare next generation as combination of two parents, with mutation
+					int sign = rand() % 2 ? 1 : -1;
+					//printf("%d\t", c_position[k]);
+					next_c_position[k] = c_position[key_parent_1] + mutation * sign * 10;
+					next_c_velocity[k] = c_velocity[key_parent_1] + mutation * sign * 10;
+					next_p_angle[k] = p_angle[key_parent_2] + mutation * sign * 10;
+					next_p_velocity[k] = p_velocity[key_parent_2] + mutation * sign * 10;
+				}
+				//printf("generation %d  \tavg = %f\t best = %d\n", n, (double) fitness_sum / (double) generation_size, fitness[best_key]);
+				fitness_sum = 0;
+			}
+			//printf("Solution:\n\tfitness = %d\n\tc1 = %d\n\tc2 = %d\n\tc3 = %d\n\tc4 = %d\n", fitness[best_key], c_position[best_key], c_velocity[best_key], p_angle[best_key], p_velocity[best_key]);
+			if (isGPU) {
+				terminateGPU();
+				time_gpu = clock() - time_gpu;
+			} else {
+				time_cpu = clock() - time_cpu;
 			}
 		}
-		// break if best solution is already found
-		if (fitness[best_key] >= time_total) break;
-
-		//printf("gen[%d] best_fitness = \t%d\n", n, fitness[best_key]);
-		// Elite - always copy the best one
-		next_c_position[0] = c_position[best_key];
-		next_c_velocity[0] = c_velocity[best_key];
-		next_p_angle[0] = p_angle[best_key];
-		next_p_velocity[0] = p_velocity[best_key];
-
-		for (int k = 1; k < generation_size; k++) {			
-			int key_parent_1 = getParentKey(fitness);
-			int key_parent_2 = getParentKey(fitness);
-
-			// Prepare next generation as combination of two parents, with mutation
-			int sign = rand() % 2 ? 1 : -1;
-			//printf("%d\t", c_position[k]);
-			next_c_position[k] = c_position[key_parent_1] + mutation * sign * 10;
-			next_c_velocity[k] = c_velocity[key_parent_1] + mutation * sign * 10;
-			next_p_angle[k] = p_angle[key_parent_2] + mutation * sign * 10;
-			next_p_velocity[k] = p_velocity[key_parent_2] + mutation * sign * 10;
-		}
-		printf("generation %d  \tavg = %f\t best = %d\n", n, (double)fitness_sum / (double)generation_size, fitness[best_key]);
-		fitness_sum = 0;
+		printf("test sample[%d] | \tGPU time = %d\tCPU time = %d\t => %s\n", test_sample, time_gpu, time_cpu, time_gpu > time_cpu ? "[GPU WON]" : "[CPU WON]");
 	}
-	printf("Solution:\n\tfitness = %d\n\tc1 = %d\n\tc2 = %d\n\tc3 = %d\n\tc4 = %d\n", fitness[best_key], c_position[best_key], c_velocity[best_key], p_angle[best_key], p_velocity[best_key]);
-	terminateGPU();
-
-#ifdef DEBUG
-	#pragma mark -
-	#pragma mark Debug
-	printf("\nENTERING DEBUG SCOPE:\n\n");
-	initiated = 0; // so the context is new
-
-	#pragma mark - GPU test
-	printf("GPU fitness again:\n");
-	int k = generation_size;
-	int * test_c_position = (int *) malloc(k * sizeof(int));
-	int * test_c_velocity = (int *) malloc(k * sizeof(int));
-	int * test_p_angle = (int *) malloc(k * sizeof(int));
-	int * test_p_velocity = (int *) malloc(k * sizeof(int));
-	int * test_fitness = (int *) malloc(k * sizeof(int));	
-	for (int i = 0; i < k; i++) {
-		test_c_position[i] = c_position[best_key];
-		test_c_velocity[i] = c_velocity[best_key];
-		test_p_angle[i] = p_angle[best_key];
-		test_p_velocity[i] = p_velocity[best_key];
-	}
-	computeFitness(test_c_position, test_c_velocity, test_p_angle, test_p_velocity, test_fitness, 1);
-	for (int i = 0; i < k; i++) {
-		printf("Test Solution:\n\tfitness = %d\n\tc1 = %d\n\tc2 = %d\n\tc3 = %d\n\tc4 = %d\n", test_fitness[i], test_c_position[i], test_c_velocity[i], test_p_angle[i], test_p_velocity[i]);
-		break; // since all the results are the same
-	}
-	terminateGPU();
-
-	#pragma mark - CPU test and Visualization
-	printf("CPU fitness:\n");
-	
-	char command[254];
-	FILE *fp;
-	char output[254];
-
-	// link this to to the Visualization binary
-	sprintf(command, "/Volumes/Data/Projects/PoleBalanceGPU/Visualization/build/Debug/Visualization %d %d %d %d", c_position[best_key], c_velocity[best_key], p_angle[best_key], p_velocity[best_key]);	
-	fp = popen(command, "r");
-	if (fp == NULL) {
-		printf("Failed to run command\n" );
-		exit;
-	}
-	while (fgets(output, sizeof(output), fp) != NULL) {
-		printf("\t%s", output);
-	}
-	int cpu_fitness = atoi(output);
-
-	// this might fail from time to time since CPU and GPU round implementation differs
-	assert(fitness[best_key] == test_fitness[0] && fitness[best_key] == cpu_fitness);
-#endif	
-
 	return 0;
 }
