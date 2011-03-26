@@ -57,4 +57,4 @@ for j = 1:length(cart_position)
     Frames(:, j) = getframe;
 end
 
-movie2avi(Frames, './build/Debug/render.avi', 'fps', fps, 'quality', 75);
+movie2avi(Frames, 'render.avi', 'fps', fps, 'quality', 75);

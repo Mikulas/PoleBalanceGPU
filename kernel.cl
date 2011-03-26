@@ -4,14 +4,13 @@
  */
 
 /**
- * c_ READ ONLY constants for computing force
- * fitness WRITE ONLY
+ * ND
+ * READ-WRITE
  */
-__kernel void add(__global int *c_c_position, __global int *c_c_velocity, __global int *c_p_angle, __global int *c_p_velocity, __global int *fitness)
+__kernel void computeFitness(__global int *c_c_position, __global int *c_c_velocity, __global int *c_p_angle, __global int *c_p_velocity, __global int *fitness)
 {
 	const float PI = 3.14159265;
 	const int gid = get_global_id(0);
-
 	const float fail_position = 2.4; // [meters]
 	const float fail_angle = PI / 6; // [radians] 30 degrees
 	const float g_acceleration = -9.81; // [meters/second/second]
@@ -22,7 +21,7 @@ __kernel void add(__global int *c_c_position, __global int *c_c_velocity, __glob
 	const int time_total = 20000; // [miliseconds]
 	const int time_step = 25; // [miliseconds]
 
-	/** default values */
+	// default values
 	float c_position = 0;
 	float c_velocity = 0;
 	float c_acceleration = 0;
@@ -52,3 +51,87 @@ __kernel void add(__global int *c_c_position, __global int *c_c_velocity, __glob
 	}
 	fitness[gid] = t;
 }
+
+
+
+/**
+ * ONE DIMENSIONAL
+ * READ-WRITE
+ */
+ 
+__kernel void prepareScale(__global int *fitness, __global int *scale)
+{
+	scale[0] = fitness[0];
+	const int dimension = get_work_dim();
+	for (int i = 1; i < dimension; i++) {
+		scale[i] = scale[i - 1] + fitness[i];
+	}
+}
+
+
+/**
+ * ND
+ * READ-WRITE
+ */
+__kernel void nextGeneration(__global int *c_c_position, __global int *c_c_velocity, __global int *c_p_angle, __global int *c_p_velocity, __global int *fitness)
+{
+	const int dimension = get_work_dim();
+	const int gid = get_global_id(0);
+	if (gid % 2) {
+		int parent1 = gid;
+		int parent2 = gid;
+		if (gid < dimension) { // if there are more entities to choose from
+			parent2 = gid + 1;
+		}
+		const int temp_c_position = c_c_position[parent2];
+		const int temp_c_velocity = c_c_velocity[parent2];
+		const int temp_p_angle = c_p_angle[parent2];
+		const int temp_p_velocity = c_p_velocity[parent2];
+		
+		// switch two values between parents
+		
+		c_c_position[parent2] = c_c_position[parent1];
+		c_c_velocity[parent2] = c_c_velocity[parent1];
+		//c_p_angle[parent2] = c_p_angle[parent1];
+		//c_p_velocity[parent2] = c_p_velocity[parent1];
+		
+		c_c_position[parent1] = temp_c_position;
+		c_c_velocity[parent1] = temp_c_velocity;
+		//c_p_angle[parent1] = temp_p_angle;
+		//c_p_velocity[parent1] = temp_p_velocity;
+	}
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

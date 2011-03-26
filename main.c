@@ -40,16 +40,15 @@ char * load_program_source(const char *filename)
 }
 
 /** globals */
-cl_program program[1];
-cl_kernel kernel[2];
+cl_program program;
+cl_kernel kernel[3];
 cl_command_queue cmd_queue;
 cl_context context;
 cl_device_id cpu = NULL, device = NULL;
 cl_int err = 0;
 size_t returned_size = 0;
 size_t buffer_size;
-cl_mem mem_c_position, mem_c_velocity, mem_p_angle, mem_p_velocity, mem_fitness;
-int initiated = 0;
+cl_mem mem_scale, mem_c_position, mem_c_velocity, mem_p_angle, mem_p_velocity, mem_fitness;
 
 #pragma mark Configuration
 const int generation_size = 100;
@@ -96,27 +95,28 @@ int initGPU(int n)
 	// is set to launch from that directory hence we use a relative path
 	const char * filename = "kernel.cl";
 	char *program_source = load_program_source(filename);
-	program[0] = clCreateProgramWithSource(context, 1, (const char**)&program_source, NULL, &err);
+	program = clCreateProgramWithSource(context, 1, (const char**)&program_source, NULL, &err);
 	assert(err == CL_SUCCESS);
 
-	err |= clBuildProgram(program[0], 0, NULL, NULL, NULL, NULL);
+	err |= clBuildProgram(program, 0, NULL, NULL, NULL, NULL);
 	assert(err == CL_SUCCESS);
 
 	// Now create the kernel "objects" that we want to use in the example file 
-	kernel[0] = clCreateKernel(program[0], "add", &err);
+	kernel[0] = clCreateKernel(program, "computeFitness", &err);
+	kernel[1] = clCreateKernel(program, "prepareScale", &err);
+	kernel[2] = clCreateKernel(program, "nextGeneration", &err);
 	assert(err == CL_SUCCESS);
 
 	#pragma mark Memory Allocation
 	// Allocate memory on the device to hold our data and store the results into
 	buffer_size = sizeof(int) * n;
 
-	mem_c_position = clCreateBuffer(context, CL_MEM_READ_ONLY, buffer_size, NULL, &err);
-	mem_c_velocity = clCreateBuffer(context, CL_MEM_READ_ONLY, buffer_size, NULL, &err);
-	mem_p_angle = clCreateBuffer(context, CL_MEM_READ_ONLY, buffer_size, NULL, &err);
-	mem_p_velocity = clCreateBuffer(context, CL_MEM_READ_ONLY, buffer_size, NULL, &err);
-	assert(err == CL_SUCCESS);
-
-	mem_fitness = clCreateBuffer(context, CL_MEM_WRITE_ONLY, buffer_size, NULL, &err);
+	mem_scale = clCreateBuffer(context, CL_MEM_READ_WRITE, buffer_size, NULL, &err);
+	mem_c_position = clCreateBuffer(context, CL_MEM_READ_WRITE, buffer_size, NULL, &err);
+	mem_c_velocity = clCreateBuffer(context, CL_MEM_READ_WRITE, buffer_size, NULL, &err);
+	mem_p_angle = clCreateBuffer(context, CL_MEM_READ_WRITE, buffer_size, NULL, &err);
+	mem_p_velocity = clCreateBuffer(context, CL_MEM_READ_WRITE, buffer_size, NULL, &err);
+	mem_fitness = clCreateBuffer(context, CL_MEM_READ_WRITE, buffer_size, NULL, &err);
 	assert(err == CL_SUCCESS);
 
 	// Get all of the stuff written and allocated
@@ -130,38 +130,38 @@ int initGPU(int n)
 void terminateGPU()
 {
 	#pragma mark Teardown
+	for (int i = 0; i < sizeof(kernel) / sizeof(cl_kernel); ++i) {
+		clReleaseKernel(kernel[i]);
+	}
+	clReleaseProgram(program);
+	clReleaseCommandQueue(cmd_queue);
+	clReleaseContext(context);
+	clReleaseMemObject(mem_scale);
 	clReleaseMemObject(mem_c_position);
 	clReleaseMemObject(mem_c_velocity);
 	clReleaseMemObject(mem_p_angle);
 	clReleaseMemObject(mem_p_velocity);
 	clReleaseMemObject(mem_fitness);
+}
 
-	clReleaseCommandQueue(cmd_queue);
-	clReleaseContext(context);
+void writeBuffer(int * c_position, int * c_velocity, int * p_angle, int * p_velocity, int * fitness, int n)
+{
+	#pragma mark Writing memory
+	buffer_size = sizeof(int) * n;
+	err = clEnqueueWriteBuffer(cmd_queue, mem_c_position, CL_FALSE, 0, buffer_size, (void *) c_position, 0, NULL, NULL);
+	err |= clEnqueueWriteBuffer(cmd_queue, mem_c_velocity, CL_FALSE, 0, buffer_size, (void *) c_velocity, 0, NULL, NULL);
+	err |= clEnqueueWriteBuffer(cmd_queue, mem_p_angle, CL_FALSE, 0, buffer_size, (void *) p_angle, 0, NULL, NULL);
+	err |= clEnqueueWriteBuffer(cmd_queue, mem_p_velocity, CL_FALSE, 0, buffer_size, (void *) p_velocity, 0, NULL, NULL);
+	assert(err == CL_SUCCESS);
+	
+	// Get all of the stuff written
+	clFinish(cmd_queue);	
 }
 
 #pragma mark -
 #pragma mark Generation context
-int computeFitness(int * c_position, int * c_velocity, int * p_angle, int * p_velocity, int * fitness, int n)
+int computeFitness(int n)
 {
-	if (!initiated) {
-		initGPU(n);
-		initiated = 1;
-	}
-
-	#pragma mark Writing memory
-	// Allocate memory on the device to hold our data and store the results into
-	buffer_size = sizeof(int) * n;
-
-	err = clEnqueueWriteBuffer(cmd_queue, mem_c_position, CL_TRUE, 0, buffer_size, (void *) c_position, 0, NULL, NULL);
-	err |= clEnqueueWriteBuffer(cmd_queue, mem_c_velocity, CL_TRUE, 0, buffer_size, (void *) c_velocity, 0, NULL, NULL);
-	err |= clEnqueueWriteBuffer(cmd_queue, mem_p_angle, CL_TRUE, 0, buffer_size, (void *) p_angle, 0, NULL, NULL);
-	err |= clEnqueueWriteBuffer(cmd_queue, mem_p_velocity, CL_TRUE, 0, buffer_size, (void *) p_velocity, 0, NULL, NULL);
-	assert(err == CL_SUCCESS);
-
-	// Get all of the stuff written and allocated
-	clFinish(cmd_queue);
-
 	#pragma mark Kernel Arguments
 	// Now setup the arguments to our kernel
 	err  = clSetKernelArg(kernel[0], 0, sizeof(cl_mem), (void *) &mem_c_position);
@@ -178,32 +178,56 @@ int computeFitness(int * c_position, int * c_velocity, int * p_angle, int * p_ve
 	err = clEnqueueNDRangeKernel(cmd_queue, kernel[0], 1, NULL, &global_work_size, NULL, 0, NULL, NULL);
 	assert(err == CL_SUCCESS);
 	clFinish(cmd_queue);
-
-	// Once finished read back the results from the answer 
-	// array into the results array
-	err = clEnqueueReadBuffer(cmd_queue, mem_fitness, CL_TRUE, 0, buffer_size, fitness, 0, NULL, NULL);
-	assert(err == CL_SUCCESS);
-	clFinish(cmd_queue);
-
 	return CL_SUCCESS;
 }
 
-// tournament selection
-int getParentKey(int * fitness)
+int prepareScale()
 {
-	int key = -1;
-	int * arena = (int *) malloc(tournament_size * sizeof(int));
+	#pragma mark Kernel Arguments
+	err  = clSetKernelArg(kernel[1], 0, sizeof(cl_mem), (void *) &mem_fitness);
+	err |= clSetKernelArg(kernel[1], 1, sizeof(cl_mem), (void *) &mem_scale);
+	assert(err == CL_SUCCESS);
+	
+	#pragma mark Execution and Reading memory
+	size_t global_work_size = 1;
+	err = clEnqueueNDRangeKernel(cmd_queue, kernel[1], 1, NULL, &global_work_size, NULL, 0, NULL, NULL);
+	assert(err == CL_SUCCESS);
+	clFinish(cmd_queue);
+	return CL_SUCCESS;
+}
 
-	for (int l = 0; l < tournament_size; l++) {
-		arena[l] = rand() % generation_size;
-	}
+int nextGeneration(int n)
+{
+	#pragma mark Kernel Arguments
+	err  = clSetKernelArg(kernel[2], 0, sizeof(cl_mem), (void *) &mem_c_position);
+	err |= clSetKernelArg(kernel[2], 1, sizeof(cl_mem), (void *) &mem_c_velocity);
+	err |= clSetKernelArg(kernel[2], 2, sizeof(cl_mem), (void *) &mem_p_angle);
+	err |= clSetKernelArg(kernel[2], 3, sizeof(cl_mem), (void *) &mem_p_velocity);
+	err |= clSetKernelArg(kernel[2], 4, sizeof(cl_mem), (void *) &mem_fitness);
+	//err |= clSetKernelArg(kernel[2], 5, sizeof(cl_mem), (void *) &mem_scale);
+	assert(err == CL_SUCCESS);
+	
+	#pragma mark Execution and Reading memory
+	size_t global_work_size = n;
+	err = clEnqueueNDRangeKernel(cmd_queue, kernel[2], 1, NULL, &global_work_size, NULL, 0, NULL, NULL);
+	assert(err == CL_SUCCESS);
+	clFinish(cmd_queue);
+	return CL_SUCCESS;
+}
 
-	for (int l = 0; l < tournament_size; l++) {
-		if (key == -1 || fitness[ arena[l] ] > fitness[key])
-			key = arena[l];
-	}
-
-	return key;
+int readBuffer(int * c_position, int * c_velocity, int * p_angle, int * p_velocity, int * fitness, int n)
+{
+	// Once finished read back the results from the answer 
+	// array into the results array
+	buffer_size = sizeof(int) * n;
+	err = clEnqueueReadBuffer(cmd_queue, mem_c_position, CL_FALSE, 0, buffer_size, c_position, 0, NULL, NULL);
+	err = clEnqueueReadBuffer(cmd_queue, mem_c_velocity, CL_FALSE, 0, buffer_size, c_velocity, 0, NULL, NULL);
+	err = clEnqueueReadBuffer(cmd_queue, mem_p_angle, CL_FALSE, 0, buffer_size, p_angle, 0, NULL, NULL);
+	err = clEnqueueReadBuffer(cmd_queue, mem_p_velocity, CL_FALSE, 0, buffer_size, p_velocity, 0, NULL, NULL);
+	err = clEnqueueReadBuffer(cmd_queue, mem_fitness, CL_FALSE, 0, buffer_size, fitness, 0, NULL, NULL);
+	assert(err == CL_SUCCESS);
+	clFinish(cmd_queue);
+	return CL_SUCCESS;
 }
 
 #pragma mark -
@@ -217,122 +241,35 @@ int main (int argc, const char * argv[])
 	int * p_angle = (int *) malloc(generation_size * sizeof(int));
 	int * p_velocity = (int *) malloc(generation_size * sizeof(int));
 	int * fitness = (int *) malloc(generation_size * sizeof(int));
-	int best_key = 0;
-
-	int * next_c_position = (int *) malloc(generation_size * sizeof(int));
-	int * next_c_velocity = (int *) malloc(generation_size * sizeof(int));
-	int * next_p_angle = (int *) malloc(generation_size * sizeof(int));
-	int * next_p_velocity = (int *) malloc(generation_size * sizeof(int));
-
+	
 	#pragma mark Generate first generation
 	for (int i = 0; i < generation_size; i++) {
-		int sign = rand() % 2 == 1 ? 1 : -1;
-		next_c_position[i] = sign * rand() % 1000;
-		next_c_velocity[i] = sign * rand() % 1000;
-		next_p_angle[i] = sign * rand() % 1000;
-		next_p_velocity[i] = sign * rand() % 1000;
-		// fitness[i] = 0;
+		const int sign = rand() % 2 == 1 ? 1 : -1;
+		c_position[i] = sign * rand() % 1000;
+		c_velocity[i] = sign * rand() % 1000;
+		p_angle[i] = sign * rand() % 1000;
+		p_velocity[i] = sign * rand() % 1000;
+		fitness[i] = 0;
 	}
+	
+	initGPU(generation_size);
+	writeBuffer(c_position, c_velocity, p_angle, p_velocity, fitness, generation_size);
 
 	#pragma mark Genetical algorithm
-	int n;
-	int fitness_sum = 0;
-	for (n = 0; n < generation_count; n++) {
-		c_position = next_c_position;
-		c_velocity = next_c_velocity;
-		p_angle = next_p_angle;
-		p_velocity = next_p_velocity;
-
-		best_key = 0;
-
-		computeFitness(c_position, c_velocity, p_angle, p_velocity, fitness, generation_size);
-
-		// prevent computing generation in the last cycle
-		if (n == generation_count - 1) break;
-
-		for (int i = 0; i < generation_size; i++) {
-			fitness_sum += fitness[i];
-			if (fitness[i] > fitness[best_key]) {
-				best_key = i;
-			}
-		}
-		// break if best solution is already found
-		if (fitness[best_key] >= time_total) break;
-
-		//printf("gen[%d] best_fitness = \t%d\n", n, fitness[best_key]);
-		// Elite - always copy the best one
-		next_c_position[0] = c_position[best_key];
-		next_c_velocity[0] = c_velocity[best_key];
-		next_p_angle[0] = p_angle[best_key];
-		next_p_velocity[0] = p_velocity[best_key];
-
-		for (int k = 1; k < generation_size; k++) {			
-			int key_parent_1 = getParentKey(fitness);
-			int key_parent_2 = getParentKey(fitness);
-
-			// Prepare next generation as combination of two parents, with mutation
-			int sign = rand() % 2 ? 1 : -1;
-			//printf("%d\t", c_position[k]);
-			next_c_position[k] = c_position[key_parent_1] + mutation * sign * 10;
-			next_c_velocity[k] = c_velocity[key_parent_1] + mutation * sign * 10;
-			next_p_angle[k] = p_angle[key_parent_2] + mutation * sign * 10;
-			next_p_velocity[k] = p_velocity[key_parent_2] + mutation * sign * 10;
-		}
-		printf("generation %d  \tavg = %f\t best = %d\n", n, (double)fitness_sum / (double)generation_size, fitness[best_key]);
-		fitness_sum = 0;
+	for (int n = 0; n < generation_count; n++) {
+		printf("generation %d\n", n, generation_size);
+		computeFitness(generation_size);
+		prepareScale();
+		nextGeneration(generation_size);
+	}
+	readBuffer(c_position, c_velocity, p_angle, p_velocity, fitness, generation_size);
+	
+	int best_key = 0;
+	for (int n = 0; n < generation_size; n++) {
+		if (fitness[n] > fitness[best_key])
+			best_key = n;
 	}
 	printf("Solution:\n\tfitness = %d\n\tc1 = %d\n\tc2 = %d\n\tc3 = %d\n\tc4 = %d\n", fitness[best_key], c_position[best_key], c_velocity[best_key], p_angle[best_key], p_velocity[best_key]);
 	terminateGPU();
-
-#ifdef DEBUG
-	#pragma mark -
-	#pragma mark Debug
-	printf("\nENTERING DEBUG SCOPE:\n\n");
-	initiated = 0; // so the context is new
-
-	#pragma mark - GPU test
-	printf("GPU fitness again:\n");
-	int k = generation_size;
-	int * test_c_position = (int *) malloc(k * sizeof(int));
-	int * test_c_velocity = (int *) malloc(k * sizeof(int));
-	int * test_p_angle = (int *) malloc(k * sizeof(int));
-	int * test_p_velocity = (int *) malloc(k * sizeof(int));
-	int * test_fitness = (int *) malloc(k * sizeof(int));	
-	for (int i = 0; i < k; i++) {
-		test_c_position[i] = c_position[best_key];
-		test_c_velocity[i] = c_velocity[best_key];
-		test_p_angle[i] = p_angle[best_key];
-		test_p_velocity[i] = p_velocity[best_key];
-	}
-	computeFitness(test_c_position, test_c_velocity, test_p_angle, test_p_velocity, test_fitness, 1);
-	for (int i = 0; i < k; i++) {
-		printf("Test Solution:\n\tfitness = %d\n\tc1 = %d\n\tc2 = %d\n\tc3 = %d\n\tc4 = %d\n", test_fitness[i], test_c_position[i], test_c_velocity[i], test_p_angle[i], test_p_velocity[i]);
-		break; // since all the results are the same
-	}
-	terminateGPU();
-
-	#pragma mark - CPU test and Visualization
-	printf("CPU fitness:\n");
-	
-	char command[254];
-	FILE *fp;
-	char output[254];
-
-	// link this to to the Visualization binary
-	sprintf(command, "/Volumes/Data/Projects/PoleBalanceGPU/Visualization/build/Debug/Visualization %d %d %d %d", c_position[best_key], c_velocity[best_key], p_angle[best_key], p_velocity[best_key]);	
-	fp = popen(command, "r");
-	if (fp == NULL) {
-		printf("Failed to run command\n" );
-		exit;
-	}
-	while (fgets(output, sizeof(output), fp) != NULL) {
-		printf("\t%s", output);
-	}
-	int cpu_fitness = atoi(output);
-
-	// this might fail from time to time since CPU and GPU round implementation differs
-	assert(fitness[best_key] == test_fitness[0] && fitness[best_key] == cpu_fitness);
-#endif	
-
 	return 0;
 }
