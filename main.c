@@ -41,21 +41,22 @@ char * load_program_source(const char *filename)
 
 /** globals */
 cl_program program;
-cl_kernel kernel[3];
+cl_kernel kernel[4];
 cl_command_queue cmd_queue;
 cl_context context;
 cl_device_id cpu = NULL, device = NULL;
 cl_int err = 0;
 size_t returned_size = 0;
 size_t buffer_size;
-cl_mem mem_scale, mem_c_position, mem_c_velocity, mem_p_angle, mem_p_velocity, mem_fitness;
+cl_mem mem_random, mem_scale, mem_c_position, mem_c_velocity, mem_p_angle, mem_p_velocity, mem_fitness;
 
 #pragma mark Configuration
-const int generation_size = 100;
+const int generation_size = 100; // MUST ALSO BE CHANGED IN prepareScale KERNEL!
 const int generation_count = 300;
-const float mutation = 0.3;
-const int time_total = 20000; // should be the same as in kernel.cl
-const int tournament_size = 10;
+
+typedef struct {
+	int x, y, z, w;
+} Random;
 
 #pragma mark -
 #pragma mark OpenCL context
@@ -105,12 +106,16 @@ int initGPU(int n)
 	kernel[0] = clCreateKernel(program, "computeFitness", &err);
 	kernel[1] = clCreateKernel(program, "prepareScale", &err);
 	kernel[2] = clCreateKernel(program, "nextGeneration", &err);
+	kernel[3] = clCreateKernel(program, "generateRand", &err);
 	assert(err == CL_SUCCESS);
 
 	#pragma mark Memory Allocation
 	// Allocate memory on the device to hold our data and store the results into
+	buffer_size = sizeof(Random) * n;
+	mem_random = clCreateBuffer(context, CL_MEM_READ_WRITE, buffer_size, NULL, &err);
+	
 	buffer_size = sizeof(int) * n;
-
+	
 	mem_scale = clCreateBuffer(context, CL_MEM_READ_WRITE, buffer_size, NULL, &err);
 	mem_c_position = clCreateBuffer(context, CL_MEM_READ_WRITE, buffer_size, NULL, &err);
 	mem_c_velocity = clCreateBuffer(context, CL_MEM_READ_WRITE, buffer_size, NULL, &err);
@@ -144,7 +149,7 @@ void terminateGPU()
 	clReleaseMemObject(mem_fitness);
 }
 
-void writeBuffer(int * c_position, int * c_velocity, int * p_angle, int * p_velocity, int * fitness, int n)
+void writeBuffer(int * c_position, int * c_velocity, int * p_angle, int * p_velocity, int * fitness, Random * random, int n)
 {
 	#pragma mark Writing memory
 	buffer_size = sizeof(int) * n;
@@ -152,6 +157,9 @@ void writeBuffer(int * c_position, int * c_velocity, int * p_angle, int * p_velo
 	err |= clEnqueueWriteBuffer(cmd_queue, mem_c_velocity, CL_FALSE, 0, buffer_size, (void *) c_velocity, 0, NULL, NULL);
 	err |= clEnqueueWriteBuffer(cmd_queue, mem_p_angle, CL_FALSE, 0, buffer_size, (void *) p_angle, 0, NULL, NULL);
 	err |= clEnqueueWriteBuffer(cmd_queue, mem_p_velocity, CL_FALSE, 0, buffer_size, (void *) p_velocity, 0, NULL, NULL);
+	
+	buffer_size = sizeof(Random) * n;
+	err |= clEnqueueWriteBuffer(cmd_queue, mem_random, CL_FALSE, 0, buffer_size, (void *) random, 0, NULL, NULL);
 	assert(err == CL_SUCCESS);
 	
 	// Get all of the stuff written
@@ -204,12 +212,27 @@ int nextGeneration(int n)
 	err |= clSetKernelArg(kernel[2], 2, sizeof(cl_mem), (void *) &mem_p_angle);
 	err |= clSetKernelArg(kernel[2], 3, sizeof(cl_mem), (void *) &mem_p_velocity);
 	err |= clSetKernelArg(kernel[2], 4, sizeof(cl_mem), (void *) &mem_fitness);
-	//err |= clSetKernelArg(kernel[2], 5, sizeof(cl_mem), (void *) &mem_scale);
+	err |= clSetKernelArg(kernel[2], 5, sizeof(cl_mem), (void *) &mem_scale);
+	err |= clSetKernelArg(kernel[2], 6, sizeof(cl_mem), (void *) &mem_random);
 	assert(err == CL_SUCCESS);
 	
 	#pragma mark Execution and Reading memory
 	size_t global_work_size = n;
 	err = clEnqueueNDRangeKernel(cmd_queue, kernel[2], 1, NULL, &global_work_size, NULL, 0, NULL, NULL);
+	assert(err == CL_SUCCESS);
+	clFinish(cmd_queue);
+	return CL_SUCCESS;
+}
+
+int generateRand(int n)
+{
+	#pragma mark Kernel Arguments
+	err  = clSetKernelArg(kernel[3], 0, sizeof(cl_mem), (void *) &mem_random);
+	assert(err == CL_SUCCESS);
+	
+	#pragma mark Execution and Reading memory
+	size_t global_work_size = n;
+	err = clEnqueueNDRangeKernel(cmd_queue, kernel[3], 1, NULL, &global_work_size, NULL, 0, NULL, NULL);
 	assert(err == CL_SUCCESS);
 	clFinish(cmd_queue);
 	return CL_SUCCESS;
@@ -231,16 +254,27 @@ int readBuffer(int * c_position, int * c_velocity, int * p_angle, int * p_veloci
 }
 
 #pragma mark -
-int main (int argc, const char * argv[])
+int main(int argc, const char * argv[])
 {
 	srand(time(NULL));
-
+	/*
+	Random foo[100], bar[100];
+	foo[1].w = 24;
+	printf("%d\n", foo[1].w);
+	Random *f = (Random*) &foo;
+	printf("%d\n", f[1].w);
+	Random *b = (Random*) &bar;
+	b[1].w = f[1].w;
+	printf("%d\n", b[1].w);
+	return 0;
+	*/
 	#pragma mark Allocate standard memory
 	int * c_position = (int *) malloc(generation_size * sizeof(int));
 	int * c_velocity = (int *) malloc(generation_size * sizeof(int));
 	int * p_angle = (int *) malloc(generation_size * sizeof(int));
 	int * p_velocity = (int *) malloc(generation_size * sizeof(int));
 	int * fitness = (int *) malloc(generation_size * sizeof(int));
+	Random * random = (Random *) malloc(generation_size * sizeof(Random));
 	
 	#pragma mark Generate first generation
 	for (int i = 0; i < generation_size; i++) {
@@ -250,15 +284,20 @@ int main (int argc, const char * argv[])
 		p_angle[i] = sign * rand() % 1000;
 		p_velocity[i] = sign * rand() % 1000;
 		fitness[i] = 0;
+		random[i].x = rand();
+		random[i].y = rand();
+		random[i].z = rand();
+		random[i].w = rand();
 	}
 	
 	initGPU(generation_size);
-	writeBuffer(c_position, c_velocity, p_angle, p_velocity, fitness, generation_size);
+	writeBuffer(c_position, c_velocity, p_angle, p_velocity, fitness, random, generation_size);
 
 	#pragma mark Genetical algorithm
 	for (int n = 0; n < generation_count; n++) {
 		printf("generation %d\n", n, generation_size);
 		computeFitness(generation_size);
+		generateRand(generation_size);
 		prepareScale();
 		nextGeneration(generation_size);
 	}

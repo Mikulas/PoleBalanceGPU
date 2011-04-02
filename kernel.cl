@@ -3,6 +3,10 @@
  * @license Original BSD, see license.txt
  */
 
+typedef struct {
+	int x, y, z, w;
+} Random;
+
 /**
  * ND
  * READ-WRITE
@@ -53,18 +57,17 @@ __kernel void computeFitness(__global int *c_c_position, __global int *c_c_veloc
 }
 
 
-
 /**
  * ONE DIMENSIONAL
  * READ-WRITE
  */
- 
 __kernel void prepareScale(__global int *fitness, __global int *scale)
 {
+	const int dimension = 100; // MUST ALSO BE CHANGED IN generation_size IN CPU FILE!
+
 	scale[0] = fitness[0];
-	const int dimension = get_work_dim();
 	for (int i = 1; i < dimension; i++) {
-		scale[i] = scale[i - 1] + fitness[i];
+		scale[i] = scale[i - 1] + fitness[i] + 1;
 	}
 }
 
@@ -73,34 +76,61 @@ __kernel void prepareScale(__global int *fitness, __global int *scale)
  * ND
  * READ-WRITE
  */
-__kernel void nextGeneration(__global int *c_c_position, __global int *c_c_velocity, __global int *c_p_angle, __global int *c_p_velocity, __global int *fitness)
+__kernel void nextGeneration(__global int *c_c_position, __global int *c_c_velocity, __global int *c_p_angle, __global int *c_p_velocity, __global int *fitness, __global int *scale, __global Random *random)
 {
-	const int dimension = get_work_dim();
+	const int dimension = get_global_size(0);
 	const int gid = get_global_id(0);
-	if (gid % 2) {
-		int parent1 = gid;
-		int parent2 = gid;
-		if (gid < dimension) { // if there are more entities to choose from
-			parent2 = gid + 1;
-		}
-		const int temp_c_position = c_c_position[parent2];
-		const int temp_c_velocity = c_c_velocity[parent2];
-		const int temp_p_angle = c_p_angle[parent2];
-		const int temp_p_velocity = c_p_velocity[parent2];
-		
-		// switch two values between parents
-		
-		c_c_position[parent2] = c_c_position[parent1];
-		c_c_velocity[parent2] = c_c_velocity[parent1];
-		//c_p_angle[parent2] = c_p_angle[parent1];
-		//c_p_velocity[parent2] = c_p_velocity[parent1];
-		
-		c_c_position[parent1] = temp_c_position;
-		c_c_velocity[parent1] = temp_c_velocity;
-		//c_p_angle[parent1] = temp_p_angle;
-		//c_p_velocity[parent1] = temp_p_velocity;
+	
+	const int scale_max = scale[dimension - 1];
+	
+	int r1 = random[gid].w % scale_max;
+	int r2 = random[gid].y % scale_max;
+	int parent1 = dimension - 1;
+	int parent2 = dimension - 1;
+	
+	for (int i = 0; i < dimension; i++) {
+		if (r1 < scale[i])
+			parent1 = i;
+		if (r2 < scale[i])
+			parent2 = i;
 	}
+		
+	const int temp_c_position = c_c_position[parent2];
+	const int temp_c_velocity = c_c_velocity[parent2];
+	const int temp_p_angle = c_p_angle[parent2];
+	const int temp_p_velocity = c_p_velocity[parent2];
+	
+	// switch two values between parents
+	const float mutation = 0.05;
+	const int sign = (random[gid].x - random[gid].y) > 0 ? 1 : -1;
+	c_c_position[parent2] = c_c_position[parent1] + sign * mutation * (float)(random[gid].x % c_c_position[parent1]);
+	c_c_velocity[parent2] = c_c_velocity[parent1] + sign * mutation * (float)(random[gid].x % c_c_position[parent1]);
+	//c_p_angle[parent2] = c_p_angle[parent1];
+	//c_p_velocity[parent2] = c_p_velocity[parent1];
+		
+	c_c_position[parent1] = temp_c_position + mutation * (float)(random[gid].x % c_c_position[parent1]);
+	c_c_velocity[parent1] = temp_c_velocity + mutation * (float)(random[gid].x % c_c_position[parent1]);
+	//c_p_angle[parent1] = temp_p_angle;
+	//c_p_velocity[parent1] = temp_p_velocity;
 }
+
+/**
+ * ND
+ * READ-WRITE
+ * Xorshift pseudorandom
+ * @see http://en.wikipedia.org/wiki/Xorshift
+ */
+__kernel void generateRand(__global Random *random)
+{
+	const int gid = get_global_id(0);
+	int t = random[gid].x ^ (random[gid].x << 11);
+	random[gid].x = random[gid].y;
+	random[gid].y = random[gid].z;
+	random[gid].z = random[gid].w;
+	random[gid].w = random[gid].w ^ (random[gid].w >> 19) ^ (t ^ (t >> 8));
+}
+
+
 
 
 
